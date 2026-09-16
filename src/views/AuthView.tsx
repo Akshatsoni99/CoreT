@@ -1,8 +1,11 @@
-import { useState } from 'react';
+import { useState, FormEvent } from 'react';
 import { Mail, Lock, User, Eye, EyeOff } from 'lucide-react';
 import AppLogo from '../assets/new-logo.png';
+import { usePopup } from '../context/PopupContext';
 
 export function AuthView({ onLogin }: { onLogin: () => void }) {
+  const { showSuccess, showError, showInfo } = usePopup();
+
   const [isLogin, setIsLogin] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
   const [formData, setFormData] = useState({
@@ -11,17 +14,61 @@ export function AuthView({ onLogin }: { onLogin: () => void }) {
     password: ''
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
-    if (isLogin) {
-      if (formData.email && formData.password) {
-        onLogin();
-      }
-    } else {
-      if (formData.name && formData.email && formData.password) {
-        onLogin();
-      }
+
+    if (!formData.email.trim() || !formData.password.trim()) {
+      showError(
+        'Missing Credentials', 
+        'Please enter your email or phone number and your password to continue.'
+      );
+      return;
     }
+
+    if (formData.password.length < 6) {
+      showError(
+        'Password Too Short', 
+        'For citizen data security, your password must be at least 6 characters.'
+      );
+      return;
+    }
+
+    if (!isLogin && !formData.name.trim()) {
+      showError(
+        'Full Name Required', 
+        'Please enter your full name as shown on your government ID (Aadhaar/PAN).'
+      );
+      return;
+    }
+
+    if (isLogin) {
+      showSuccess(
+        'Signed In Successfully!', 
+        'Welcome back to CoreT. Accessing your personalized citizen dashboard...',
+        () => onLogin()
+      );
+    } else {
+      showSuccess(
+        'Account Registered!', 
+        `Welcome to CoreT, ${formData.name}! Your citizen profile and security vault have been created.`,
+        () => onLogin()
+      );
+    }
+  };
+
+  const handleForgotPassword = () => {
+    if (!formData.email.trim()) {
+      showInfo(
+        'Password Recovery',
+        'Please enter your registered email or phone number in the field above, then click Forgot Password.'
+      );
+      return;
+    }
+
+    showSuccess(
+      'Recovery Code Sent',
+      `A secure 6-digit OTP verification link has been sent to ${formData.email}.`
+    );
   };
 
   return (
@@ -49,7 +96,6 @@ export function AuthView({ onLogin }: { onLogin: () => void }) {
                 </div>
                 <input 
                   type="text" 
-                  required
                   placeholder="e.g. Rohan Sharma"
                   value={formData.name}
                   onChange={e => setFormData({...formData, name: e.target.value})}
@@ -67,7 +113,6 @@ export function AuthView({ onLogin }: { onLogin: () => void }) {
               </div>
               <input 
                 type="text" 
-                required
                 placeholder="Enter your email or phone"
                 value={formData.email}
                 onChange={e => setFormData({...formData, email: e.target.value})}
@@ -84,14 +129,13 @@ export function AuthView({ onLogin }: { onLogin: () => void }) {
               </div>
               <input 
                 type={showPassword ? 'text' : 'password'} 
-                required
                 placeholder="Enter your password"
                 value={formData.password}
                 onChange={e => setFormData({...formData, password: e.target.value})}
                 className="w-full border border-gray-300 rounded-xl py-3 pl-11 pr-12 text-sm focus:outline-none focus:border-[#004B87] focus:ring-1 focus:ring-[#004B87] transition-all bg-white"
               />
               <button 
-                type="button"
+                type="button" 
                 onClick={() => setShowPassword(!showPassword)}
                 className="absolute inset-y-0 right-4 flex items-center text-gray-400 hover:text-gray-600 transition-colors"
               >
@@ -102,7 +146,11 @@ export function AuthView({ onLogin }: { onLogin: () => void }) {
 
           {isLogin && (
             <div className="flex justify-end pt-1">
-              <button type="button" className="text-[#004B87] text-sm font-bold hover:underline">
+              <button 
+                type="button" 
+                onClick={handleForgotPassword}
+                className="text-[#004B87] text-sm font-bold hover:underline"
+              >
                 Forgot password?
               </button>
             </div>
@@ -111,7 +159,7 @@ export function AuthView({ onLogin }: { onLogin: () => void }) {
           <div className="pt-4">
             <button 
               type="submit"
-              className="w-full bg-[#004B87] hover:bg-blue-800 text-white rounded-full py-3.5 font-bold flex items-center justify-center gap-2 transition-all shadow-lg shadow-[#004B87]/30"
+              className="w-full bg-[#004B87] hover:bg-blue-800 text-white rounded-full py-3.5 font-bold flex items-center justify-center gap-2 transition-all shadow-lg shadow-[#004B87]/30 active:scale-[0.99]"
             >
               {isLogin ? 'Sign In' : 'Create Account'}
             </button>

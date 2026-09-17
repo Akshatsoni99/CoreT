@@ -22,7 +22,7 @@ import AppLogo from '../assets/new-logo.png';
 import { usePopup } from '../context/PopupContext';
 
 interface HomeViewProps {
-  onNavigate: (tab: string) => void;
+  onNavigate: (tab: string, query?: string) => void;
 }
 
 export function HomeView({ onNavigate }: HomeViewProps) {
@@ -89,15 +89,13 @@ export function HomeView({ onNavigate }: HomeViewProps) {
 
   const handleSearchSubmit = () => {
     if (!searchQuery.trim()) {
-      showError('Search Query Required', 'Please enter a government service, certificate name, or scheme to search.');
+      showError('Search Query Required', 'Please enter a government service, certificate name, or banking question.');
       return;
     }
 
-    const query = searchQuery.trim().toLowerCase();
+    const query = searchQuery.trim();
     setSearchQuery('');
-    showSuccess('Search Query Received', `Searching citizen catalog for "${query}"...`, () => {
-      onNavigate('services');
-    });
+    onNavigate('ask-ai', query);
   };
 
   const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
@@ -107,10 +105,7 @@ export function HomeView({ onNavigate }: HomeViewProps) {
   };
 
   const handleMicClick = () => {
-    showInfo(
-      'Voice Assistant Listening',
-      'Speak clearly into your microphone... (e.g. "How to get an income certificate" or "Check Aadhaar status").'
-    );
+    onNavigate('ask-ai');
   };
 
   const handleTipsClick = () => {

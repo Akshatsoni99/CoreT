@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Settings, FileText, Shield, Bell, HelpCircle, LogOut, ChevronRight, ChevronLeft, Save } from 'lucide-react';
 import AppLogo from '../assets/new-logo.png';
+import { isGeminiConfigured, getGeminiApiKey } from '../services/geminiService';
 
 type ProfileViewState = 'main' | 'edit' | 'vault' | 'privacy' | 'settings' | 'support';
 
@@ -152,6 +153,79 @@ export function ProfileView({ onLogout }: { onLogout?: () => void }) {
     </div>
   );
 
+  const renderSettings = () => {
+    const isConfigured = isGeminiConfigured();
+    const currentKey = getGeminiApiKey();
+    const maskedKey = currentKey ? currentKey.slice(0, 6) + '••••••••••••' + currentKey.slice(-4) : 'Not configured';
+
+    return (
+      <div className="flex flex-col h-full bg-[#F9FAFB]">
+        <header className="flex items-center px-4 pt-12 pb-4 bg-white border-b border-gray-100 sticky top-0 z-10">
+          <button onClick={() => setCurrentView('main')} className="p-2 -ml-2 text-gray-900">
+            <ChevronLeft size={24} />
+          </button>
+          <h1 className="text-xl font-bold text-gray-900 ml-2">App Settings</h1>
+        </header>
+
+        <div className="flex-1 overflow-y-auto p-4 space-y-4 pb-24">
+          {/* Gemini AI Card */}
+          <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-blue-50 text-[#004B87] flex items-center justify-center font-bold">
+                  ✨
+                </div>
+                <div>
+                  <h3 className="font-bold text-gray-900 text-sm">Gemini AI Assistant (RAAHA)</h3>
+                  <p className="text-[11px] text-gray-500">Powered by Google Gemini 3.6 Flash</p>
+                </div>
+              </div>
+              <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full ${
+                isConfigured ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-800'
+              }`}>
+                {isConfigured ? 'Connected' : 'Missing Key'}
+              </span>
+            </div>
+
+            <div className="bg-gray-50 p-3 rounded-xl border border-gray-200/80 text-xs">
+              <div className="flex justify-between items-center mb-1">
+                <span className="text-gray-500 font-medium">Active API Key:</span>
+                <span className="font-mono text-gray-700">{maskedKey}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-gray-500 font-medium">Source:</span>
+                <span className="text-gray-700 font-medium">.env (Vite Inject)</span>
+              </div>
+            </div>
+
+            <div className="text-[11px] text-gray-500 leading-relaxed">
+              Your Gemini API Key is loaded automatically from your <code className="bg-gray-100 px-1 py-0.5 rounded text-gray-700 font-mono">.env</code> file. RAAHA AI uses it for real-time banking guidance, form filling help, speech recognition, and document analysis.
+            </div>
+          </div>
+
+          {/* Citizen Assistant Preferences */}
+          <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm space-y-3">
+            <h3 className="font-bold text-gray-900 text-sm">Citizen Accessibility</h3>
+            <div className="space-y-2 text-xs text-gray-600">
+              <div className="flex justify-between items-center py-1 border-b border-gray-50">
+                <span>Text-to-Speech Audio Read Aloud</span>
+                <span className="font-bold text-green-600">Enabled</span>
+              </div>
+              <div className="flex justify-between items-center py-1 border-b border-gray-50">
+                <span>Regional Voice Recognition</span>
+                <span className="font-bold text-green-600">7 Languages</span>
+              </div>
+              <div className="flex justify-between items-center py-1">
+                <span>Multimodal Form Slip Vision</span>
+                <span className="font-bold text-green-600">Active</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const renderPlaceholder = (title: string, icon: any) => {
     const Icon = icon;
     return (
@@ -181,7 +255,7 @@ export function ProfileView({ onLogout }: { onLogout?: () => void }) {
       {currentView === 'edit' && renderEditProfile()}
       {currentView === 'vault' && renderPlaceholder('Saved Information Vault', FileText)}
       {currentView === 'privacy' && renderPlaceholder('Privacy & Security', Shield)}
-      {currentView === 'settings' && renderPlaceholder('App Settings', Bell)}
+      {currentView === 'settings' && renderSettings()}
       {currentView === 'support' && renderPlaceholder('Help & Support', HelpCircle)}
     </div>
   );

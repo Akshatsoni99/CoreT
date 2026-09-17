@@ -16,6 +16,14 @@ import { AuthView } from './views/AuthView';
 export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [activeTab, setActiveTab] = useState('home');
+  const [aiInitialQuery, setAiInitialQuery] = useState('');
+
+  const handleNavigate = (tab: string, query?: string) => {
+    if (query) {
+      setAiInitialQuery(query);
+    }
+    setActiveTab(tab);
+  };
 
   if (!isAuthenticated) {
     return (
@@ -29,12 +37,12 @@ export default function App() {
 
   return (
     <Layout activeTab={activeTab} onTabChange={setActiveTab}>
-      {activeTab === 'home' && <HomeView onNavigate={setActiveTab} />}
+      {activeTab === 'home' && <HomeView onNavigate={handleNavigate} />}
       {activeTab === 'scanner' && <ScannerView onComplete={() => setActiveTab('home')} />}
       {activeTab === 'services' && <ServicesView />}
       {activeTab === 'scam-shield' && <ScamShieldView />}
       {activeTab === 'profile' && <ProfileView onLogout={() => setIsAuthenticated(false)} />}
-      {activeTab === 'ask-ai' && <AskAIView />}
+      {activeTab === 'ask-ai' && <AskAIView onNavigate={setActiveTab} initialQuery={aiInitialQuery} />}
     </Layout>
   );
 }

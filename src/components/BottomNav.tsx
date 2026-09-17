@@ -9,7 +9,7 @@ export function BottomNav({ activeTab, onTabChange }: BottomNavProps) {
   const navItems = [
     { id: 'home', label: 'Home', icon: Home },
     { id: 'scanner', label: 'Scanner', icon: Scan },
-    { id: 'ask-ai', label: 'Ask AI', icon: Bot, isCenter: true },
+    { id: 'ask-ai', label: 'RAAHA', icon: Bot, isCenter: true },
     { id: 'services', label: 'Services', icon: Grid },
     { id: 'scam-shield', label: 'Scam Shield', icon: ShieldCheck },
     { id: 'profile', label: 'Profile', icon: User },

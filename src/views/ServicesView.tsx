@@ -1,29 +1,149 @@
 import { useState } from 'react';
-import { ChevronLeft, Search, User, HeartPulse, Landmark, GraduationCap, Users, Zap, Flame, ChevronRight, ExternalLink, FileText, CheckCircle2 } from 'lucide-react';
+import { 
+  ChevronLeft, 
+  Search, 
+  User, 
+  HeartPulse, 
+  Landmark, 
+  GraduationCap, 
+  Users, 
+  Zap, 
+  Flame, 
+  ChevronRight, 
+  ExternalLink, 
+  FileText, 
+  CheckCircle2,
+  ArrowDownLeft,
+  ArrowUpRight,
+  ArrowRightLeft,
+  Sparkles
+} from 'lucide-react';
+import { BankFormModal, BankServiceType } from '../components/banking/BankFormModal';
 
-// Mock Data for Categories & Services
-const categoriesData = [
-  { id: 'identity', icon: User, name: 'Identity', desc: 'Aadhaar, PAN, Voter ID', color: 'text-blue-500', bg: 'bg-blue-50', services: [
+interface ServiceItem {
+  name: string;
+  desc: string;
+  docs: string[];
+  url: string;
+  slipType?: BankServiceType;
+  icon?: any;
+}
+
+interface CategoryItem {
+  id: string;
+  icon: any;
+  name: string;
+  desc: string;
+  color: string;
+  bg: string;
+  services: ServiceItem[];
+}
+
+// Data for Categories & Services with "Most Used Bank Services" included
+const categoriesData: CategoryItem[] = [
+  { 
+    id: 'identity', 
+    icon: User, 
+    name: 'Identity', 
+    desc: 'Aadhaar, PAN, Voter ID', 
+    color: 'text-blue-500', 
+    bg: 'bg-blue-50', 
+    services: [
       { name: 'Aadhaar Card', desc: 'Unique Identification Authority of India', docs: ['Proof of Identity (POI)', 'Proof of Address (POA)', 'Date of Birth (DOB) Proof'], url: 'https://myaadhaar.uidai.gov.in/' },
       { name: 'PAN Card', desc: 'Income Tax Department', docs: ['Aadhaar Card', 'Passport Size Photo', 'Address Proof'], url: 'https://www.incometax.gov.in/' },
       { name: 'Voter ID', desc: 'Election Commission of India', docs: ['Address Proof', 'Age Proof (if 18-21)', 'Recent Photograph'], url: 'https://voters.eci.gov.in/' }
-  ]},
-  { id: 'healthcare', icon: HeartPulse, name: 'Healthcare', desc: 'Health cards, Medical benefits', color: 'text-red-500', bg: 'bg-red-50', services: [
+    ]
+  },
+  { 
+    id: 'healthcare', 
+    icon: HeartPulse, 
+    name: 'Healthcare', 
+    desc: 'Health cards, Medical benefits', 
+    color: 'text-red-500', 
+    bg: 'bg-red-50', 
+    services: [
       { name: 'Ayushman Bharat Card', desc: 'National Health Authority', docs: ['Aadhaar Card', 'Ration Card', 'Income Certificate'], url: 'https://pmjay.gov.in/' },
       { name: 'ABHA Card', desc: 'Digital Health ID', docs: ['Aadhaar Card', 'Mobile Number'], url: 'https://abha.abdm.gov.in/' }
-  ]},
-  { id: 'taxes', icon: Landmark, name: 'Taxes', desc: 'Income Tax, Property Tax', color: 'text-green-500', bg: 'bg-green-50', services: [
+    ]
+  },
+  { 
+    id: 'bank_services', 
+    icon: Landmark, 
+    name: 'Most Used Bank Services', 
+    desc: 'Withdraw, deposit, transfer & KYC', 
+    color: 'text-emerald-600', 
+    bg: 'bg-emerald-50', 
+    services: [
+      { 
+        name: 'Withdrawal', 
+        desc: 'Fill a cash withdrawal slip', 
+        icon: ArrowDownLeft,
+        slipType: 'withdrawal',
+        docs: ['Bank Passbook', 'Physical Withdrawal Slip', 'Valid Identity Proof'], 
+        url: '#' 
+      },
+      { 
+        name: 'Deposit', 
+        desc: 'Fill a cash deposit slip', 
+        icon: ArrowUpRight,
+        slipType: 'deposit',
+        docs: ['Cash/Cheque to deposit', 'Bank Account Number', 'PAN Card (if ₹50,000+)'], 
+        url: '#' 
+      },
+      { 
+        name: 'Bank Transfer', 
+        desc: 'Fill a bank transfer form', 
+        icon: ArrowRightLeft,
+        slipType: 'transfer',
+        docs: ['Applicant Account Details', 'Beneficiary Account Number', 'Bank IFSC Code'], 
+        url: '#' 
+      }
+    ]
+  },
+  { 
+    id: 'taxes', 
+    icon: Landmark, 
+    name: 'Taxes', 
+    desc: 'Income Tax, Property Tax', 
+    color: 'text-green-500', 
+    bg: 'bg-green-50', 
+    services: [
       { name: 'ITR Filing', desc: 'Income Tax Department', docs: ['Form 16', 'Bank Statements', 'PAN Card', 'Investment Proofs'], url: 'https://www.incometax.gov.in/' }
-  ]},
-  { id: 'education', icon: GraduationCap, name: 'Education', desc: 'Scholarships, Certificates', color: 'text-yellow-500', bg: 'bg-yellow-50', services: [
+    ]
+  },
+  { 
+    id: 'education', 
+    icon: GraduationCap, 
+    name: 'Education', 
+    desc: 'Scholarships, Certificates', 
+    color: 'text-yellow-500', 
+    bg: 'bg-yellow-50', 
+    services: [
       { name: 'National Scholarship', desc: 'Ministry of Education', docs: ['Mark Sheets', 'Income Certificate', 'Caste Certificate', 'Bank Details'], url: 'https://scholarships.gov.in/' }
-  ]},
-  { id: 'social_welfare', icon: Users, name: 'Social Welfare', desc: 'Pensions, Benefits', color: 'text-purple-500', bg: 'bg-purple-50', services: [
+    ]
+  },
+  { 
+    id: 'social_welfare', 
+    icon: Users, 
+    name: 'Social Welfare', 
+    desc: 'Pensions, Benefits', 
+    color: 'text-purple-500', 
+    bg: 'bg-purple-50', 
+    services: [
       { name: 'Old Age Pension', desc: 'Ministry of Rural Development', docs: ['Age Proof', 'Aadhaar Card', 'Income Certificate', 'BPL Card'], url: 'https://nsap.nic.in/' }
-  ]},
-  { id: 'utilities', icon: Zap, name: 'Utilities', desc: 'Electricity, Water, Gas', color: 'text-orange-500', bg: 'bg-orange-50', services: [
+    ]
+  },
+  { 
+    id: 'utilities', 
+    icon: Zap, 
+    name: 'Utilities', 
+    desc: 'Electricity, Water, Gas', 
+    color: 'text-orange-500', 
+    bg: 'bg-orange-50', 
+    services: [
       { name: 'New Electricity Connection', desc: 'State Electricity Board', docs: ['Ownership Proof', 'Identity Proof', 'Passport Size Photo'], url: 'https://www.india.gov.in/' }
-  ]},
+    ]
+  },
 ];
 
 type ViewState = 
@@ -33,6 +153,18 @@ type ViewState =
 
 export function ServicesView() {
   const [view, setView] = useState<ViewState>({ type: 'main' });
+  const [activeBankModal, setActiveBankModal] = useState<BankServiceType | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+
+  const filteredCategories = categoriesData.filter(cat => {
+    if (!searchQuery.trim()) return true;
+    const q = searchQuery.toLowerCase();
+    return (
+      cat.name.toLowerCase().includes(q) ||
+      cat.desc.toLowerCase().includes(q) ||
+      cat.services.some(s => s.name.toLowerCase().includes(q) || s.desc.toLowerCase().includes(q))
+    );
+  });
 
   const renderMainView = () => (
     <>
@@ -43,7 +175,7 @@ export function ServicesView() {
           </button>
           <h1 className="text-xl font-bold text-gray-900 ml-2">Services</h1>
         </div>
-        <p className="text-gray-500 text-sm mb-4">Discover and apply for government services across India.</p>
+        <p className="text-gray-500 text-sm mb-4">Discover and apply for citizen & bank services across India.</p>
         
         <div className="relative">
           <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none">
@@ -51,30 +183,41 @@ export function ServicesView() {
           </div>
           <input 
             type="text" 
-            placeholder="Search for a service (e.g. income certificate)" 
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search for a service (e.g. withdrawal, income certificate)" 
             className="w-full bg-gray-50 border border-gray-200 rounded-2xl py-3 pl-12 pr-4 text-sm focus:outline-none focus:border-blue-500 transition-colors"
           />
         </div>
       </header>
 
-      <div className="flex-1 overflow-y-auto p-4 pb-20">
+      <div className="flex-1 overflow-y-auto p-4 pb-24">
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-lg font-bold text-gray-900">Popular Categories</h2>
-          <button className="text-blue-600 text-sm font-bold">See All</button>
+          {searchQuery && (
+            <button 
+              onClick={() => setSearchQuery('')}
+              className="text-blue-600 text-xs font-bold"
+            >
+              Clear Search
+            </button>
+          )}
         </div>
 
         <div className="grid grid-cols-2 gap-3 mb-8">
-          {categoriesData.map((cat) => (
+          {filteredCategories.map((cat) => (
             <button 
               key={cat.id} 
               onClick={() => setView({ type: 'category', categoryId: cat.id })}
-              className="border border-gray-100 rounded-2xl p-4 flex flex-col items-center text-center shadow-sm hover:border-blue-200 hover:shadow-md transition-all bg-white"
+              className={`border rounded-2xl p-4 flex flex-col items-center text-center shadow-sm hover:border-blue-200 hover:shadow-md transition-all bg-white ${
+                cat.id === 'bank_services' ? 'border-emerald-200/80 ring-1 ring-emerald-500/20' : 'border-gray-100'
+              }`}
             >
               <div className={`w-12 h-12 rounded-full ${cat.bg} ${cat.color} flex items-center justify-center mb-3`}>
                 <cat.icon size={24} />
               </div>
               <h3 className="font-bold text-gray-900 text-sm mb-1">{cat.name}</h3>
-              <p className="text-[10px] text-gray-500">{cat.desc}</p>
+              <p className="text-[10px] text-gray-500 leading-tight">{cat.desc}</p>
             </button>
           ))}
         </div>
@@ -84,15 +227,36 @@ export function ServicesView() {
             <Flame className="text-orange-500" size={20} />
             <h2 className="text-lg font-bold text-gray-900">Trending Services</h2>
           </div>
-          <button className="text-blue-600 text-sm font-bold">See All</button>
         </div>
 
         <div className="space-y-3">
-          {['Income Certificate', 'Caste Certificate'].map((service, i) => (
-            <div key={i} className="border border-gray-100 rounded-xl p-4 flex items-center justify-between shadow-sm bg-white">
+          {[
+            { name: 'Cash Withdrawal Slip', cat: 'bank_services', slip: 'withdrawal' as BankServiceType },
+            { name: 'Cash Deposit Slip', cat: 'bank_services', slip: 'deposit' as BankServiceType },
+            { name: 'Income Certificate', cat: 'identity' },
+            { name: 'Caste Certificate', cat: 'identity' }
+          ].map((item, i) => (
+            <div 
+              key={i} 
+              onClick={() => {
+                if (item.slip) {
+                  setActiveBankModal(item.slip);
+                } else {
+                  setView({ type: 'category', categoryId: item.cat });
+                }
+              }}
+              className="border border-gray-100 rounded-xl p-4 flex items-center justify-between shadow-sm bg-white cursor-pointer hover:border-blue-200 transition-colors"
+            >
               <div className="flex items-center gap-3">
-                <span className="text-blue-600 font-bold w-6 text-center">{i + 1}</span>
-                <span className="font-medium text-gray-900">{service}</span>
+                <span className="text-[#004B87] font-bold w-6 text-center">{i + 1}</span>
+                <div>
+                  <span className="font-medium text-gray-900 text-sm block">{item.name}</span>
+                  {item.slip && (
+                    <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full inline-block mt-0.5">
+                      Bank Form Guide
+                    </span>
+                  )}
+                </div>
               </div>
               <ChevronRight className="text-gray-400" size={20} />
             </div>
@@ -104,6 +268,7 @@ export function ServicesView() {
 
   const renderCategoryView = (categoryId: string) => {
     const category = categoriesData.find(c => c.id === categoryId)!;
+    const isBank = category.id === 'bank_services';
     
     return (
       <div className="flex flex-col h-full bg-[#F9FAFB]">
@@ -111,28 +276,68 @@ export function ServicesView() {
           <button onClick={() => setView({ type: 'main' })} className="p-2 -ml-2 text-gray-900">
             <ChevronLeft size={24} />
           </button>
-          <div className="flex items-center gap-2 ml-2">
+          <div className="flex items-center gap-2.5 ml-2">
             <div className={`w-8 h-8 rounded-full ${category.bg} ${category.color} flex items-center justify-center`}>
-              <category.icon size={16} />
+              <category.icon size={18} />
             </div>
-            <h1 className="text-xl font-bold text-gray-900">{category.name} Services</h1>
+            <div>
+              <h1 className="text-base font-bold text-gray-900 leading-tight">{category.name}</h1>
+              <p className="text-[10px] text-gray-500">{category.desc}</p>
+            </div>
           </div>
         </header>
 
         <div className="flex-1 overflow-y-auto p-4 space-y-3 pb-24">
-          {category.services.map((service, i) => (
-            <button 
-              key={i} 
-              onClick={() => setView({ type: 'detail', categoryId: category.id, serviceName: service.name })}
-              className="w-full bg-white p-4 rounded-xl border border-gray-100 shadow-sm flex items-center justify-between text-left hover:border-blue-200 transition-colors"
-            >
-              <div>
-                <h3 className="font-bold text-gray-900">{service.name}</h3>
-                <p className="text-xs text-gray-500 mt-1">{service.desc}</p>
+          {isBank && (
+            <div className="bg-emerald-50 border border-emerald-200/80 rounded-2xl p-4 mb-2 flex items-start gap-3 shadow-sm">
+              <div className="w-8 h-8 rounded-full bg-emerald-600 text-white flex items-center justify-center shrink-0 mt-0.5">
+                <Sparkles size={16} />
               </div>
-              <ChevronRight className="text-gray-400 shrink-0" size={20} />
-            </button>
-          ))}
+              <div>
+                <h4 className="text-xs font-bold text-emerald-950">Guided Bank Slip Assistant</h4>
+                <p className="text-[11px] text-emerald-800 mt-0.5 leading-relaxed">
+                  Select a slip below. RAAHA will guide you step by step to fill out the form easily, even without banking knowledge.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {category.services.map((service, i) => {
+            const Icon = service.icon || FileText;
+            return (
+              <button 
+                key={i} 
+                onClick={() => {
+                  if (service.slipType) {
+                    setActiveBankModal(service.slipType);
+                  } else {
+                    setView({ type: 'detail', categoryId: category.id, serviceName: service.name });
+                  }
+                }}
+                className="w-full bg-white p-4 rounded-2xl border border-gray-100 shadow-sm flex items-center justify-between text-left hover:border-blue-200 hover:shadow-md transition-all active:scale-[0.99]"
+              >
+                <div className="flex items-center gap-3.5">
+                  <div className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 ${
+                    isBank ? 'bg-emerald-50 text-emerald-700' : 'bg-blue-50 text-[#004B87]'
+                  }`}>
+                    <Icon size={22} />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-gray-900 text-sm">{service.name}</h3>
+                    <p className="text-xs text-gray-500 mt-0.5">{service.desc}</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1">
+                  {service.slipType && (
+                    <span className="text-[10px] font-bold text-blue-700 bg-blue-50 px-2.5 py-1 rounded-full hidden sm:inline-block">
+                      Fill Slip
+                    </span>
+                  )}
+                  <ChevronRight className="text-gray-400 shrink-0" size={20} />
+                </div>
+              </button>
+            );
+          })}
         </div>
       </div>
     );
@@ -195,6 +400,14 @@ export function ServicesView() {
       {view.type === 'main' && renderMainView()}
       {view.type === 'category' && renderCategoryView(view.categoryId)}
       {view.type === 'detail' && renderDetailView(view.categoryId, view.serviceName)}
+
+      {/* Guided Bank Form Experience Modal */}
+      {activeBankModal && (
+        <BankFormModal 
+          type={activeBankModal} 
+          onClose={() => setActiveBankModal(null)} 
+        />
+      )}
     </div>
   );
 }

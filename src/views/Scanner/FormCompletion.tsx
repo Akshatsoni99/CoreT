@@ -241,7 +241,7 @@ export function FormCompletion({ result, onComplete, onBack }: FormCompletionPro
           <div className="w-8" />
         </header>
 
-        <div className="flex-1 overflow-y-auto p-4 space-y-4 pb-28">
+        <div className="flex-1 overflow-y-auto p-4 space-y-4 pb-6">
           
           {/* Completed Slip Physical Preview */}
           <div className="bg-white rounded-2xl border border-gray-200 shadow-md overflow-hidden">
@@ -322,17 +322,19 @@ export function FormCompletion({ result, onComplete, onBack }: FormCompletionPro
           </div>
         </div>
 
-        {/* Bottom Actions */}
-        <div className="p-4 bg-white border-t border-gray-100 absolute bottom-0 inset-x-0 z-20 flex gap-3">
+        {/* Pinned Bottom Actions */}
+        <div className="p-4 bg-white border-t border-gray-200 shrink-0 z-30 flex gap-3 shadow-[0_-4px_16px_rgba(0,0,0,0.06)]">
           {missingFields.length > 0 && (
             <button
+              type="button"
               onClick={() => setViewState('input')}
-              className="flex-1 py-3.5 border border-gray-300 text-gray-700 font-bold rounded-full text-sm hover:bg-gray-50 transition-colors"
+              className="flex-1 py-3.5 border border-gray-300 text-gray-700 font-bold rounded-full text-sm hover:bg-gray-50 transition-colors flex items-center justify-center gap-1.5"
             >
-              Edit Fields
+              <ChevronLeft size={18} /> Edit Fields
             </button>
           )}
           <button
+            type="button"
             onClick={handleFinalSubmit}
             className="flex-[2] py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white font-black rounded-full text-sm transition-all shadow-lg shadow-emerald-600/30 flex items-center justify-center gap-2 active:scale-95"
           >
@@ -488,14 +490,16 @@ export function FormCompletion({ result, onComplete, onBack }: FormCompletionPro
       </div>
 
       {/* Bottom Sticky Action */}
-      <div className="p-4 bg-white border-t border-gray-100 flex gap-3">
+      <div className="p-4 bg-white border-t border-gray-200 shrink-0 z-30 flex gap-3 shadow-[0_-4px_16px_rgba(0,0,0,0.06)]">
         <button
+          type="button"
           onClick={handlePrevInput}
-          className="flex-1 py-3.5 border border-gray-300 text-gray-700 font-bold rounded-full text-sm hover:bg-gray-50 transition-colors"
+          className="flex-1 py-3.5 border border-gray-300 text-gray-700 font-bold rounded-full text-sm hover:bg-gray-50 transition-colors flex items-center justify-center gap-1.5"
         >
-          Back
+          <ChevronLeft size={18} /> Back
         </button>
         <button 
+          type="button"
           onClick={handleNextInput}
           className="flex-[2] bg-[#004B87] hover:bg-blue-800 text-white rounded-full py-3.5 font-bold transition-all shadow-lg shadow-[#004B87]/30 flex items-center justify-center gap-2 text-sm active:scale-95"
         >

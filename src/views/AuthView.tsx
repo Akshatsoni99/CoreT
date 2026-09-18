@@ -52,8 +52,12 @@ export function AuthView({ onLogin }: { onLogin: () => void }) {
       const existing = getUserProfile();
       if (!existing.name) {
         const username = formData.email.split('@')[0];
+        const cleanName = username.toLowerCase().startsWith('akshat')
+          ? 'Akshat'
+          : username.replace(/[0-9._%+-]+$/g, '').trim();
+        const finalName = cleanName ? cleanName.charAt(0).toUpperCase() + cleanName.slice(1) : 'Citizen';
         setUserProfile({
-          name: username.charAt(0).toUpperCase() + username.slice(1),
+          name: finalName,
           email: formData.email.trim()
         });
       } else {

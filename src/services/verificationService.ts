@@ -32,16 +32,19 @@ function getFormattedDateStamp(): string {
 
 /**
  * Generate a unique verification identifier containing alphabets, numbers, and special characters.
- * Example: WD-20260918-A7#K9!Q2
+ * Example: SS-WD-26-A7@K9#2
  */
 export function generateVerificationId(prefix: FormPrefix): string {
-  const dateStamp = getFormattedDateStamp();
+  const d = new Date();
+  const year2 = String(d.getFullYear()).slice(-2);
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  
+  // Use crypto random values
   const seg1 = getCryptoRandomString(2, chars);
   const seg2 = getCryptoRandomString(2, chars);
-  const seg3 = getCryptoRandomString(2, chars);
+  const seg3 = getCryptoRandomString(1, '23456789');
 
-  return `${prefix}-${dateStamp}-${seg1}#${seg2}!${seg3}`;
+  return `SS-${prefix}-${year2}-${seg1}@${seg2}#${seg3}`;
 }
 
 /**

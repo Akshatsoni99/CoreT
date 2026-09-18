@@ -179,18 +179,24 @@ export function AnalysisResults({ result, onNext, onBack }: AnalysisResultsProps
       </div>
 
       {/* Bottom Action Bar */}
-      <div className="p-4 bg-white border-t border-gray-100 flex gap-3">
+      <div className="p-4 bg-white border-t border-gray-200 shrink-0 z-30 flex gap-3 shadow-[0_-4px_16px_rgba(0,0,0,0.06)]">
         <button
+          type="button"
           onClick={onBack}
-          className="flex-1 py-3.5 border border-gray-300 text-gray-700 font-bold rounded-full text-sm hover:bg-gray-50 transition-colors"
+          className="flex-1 py-3.5 border border-gray-300 text-gray-700 font-bold rounded-full text-sm hover:bg-gray-50 transition-colors flex items-center justify-center gap-1.5"
         >
-          Back
+          <ChevronLeft size={18} /> Back
         </button>
         <button 
+          type="button"
           onClick={onNext}
           className="flex-[2] bg-[#004B87] hover:bg-blue-800 text-white rounded-full py-3.5 font-bold transition-all shadow-lg shadow-[#004B87]/30 flex items-center justify-center gap-2 text-sm active:scale-95"
         >
-          <span>Fill Missing Fields ({needsInputFields.length})</span>
+          <span>
+            {needsInputFields.length > 0 
+              ? `Fill Missing Fields (${needsInputFields.length})`
+              : 'Review Completed Slip'}
+          </span>
           <ArrowRight size={18} />
         </button>
       </div>

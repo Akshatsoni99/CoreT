@@ -17,8 +17,8 @@ console.log('  WD ID:', id1);
 console.log('  DP ID:', id2);
 console.log('  TR ID:', id3);
 
-if (!id1.startsWith('WD-') || !id2.startsWith('DP-') || !id3.startsWith('TR-')) {
-  throw new Error('Verification ID does not start with correct service prefix');
+if (!id1.startsWith('SS-WD-') || !id2.startsWith('SS-DP-') || !id3.startsWith('SS-TR-')) {
+  throw new Error('Verification ID does not start with correct SafeServe service prefix');
 }
 if (id1 === id2 || id1 === id3) {
   throw new Error('Verification IDs are not uniquely generated');

@@ -718,6 +718,7 @@ export function BankFormModal({ type, onClose, initialData }: BankFormModalProps
               inputMode="numeric"
               value={value ? Number(value).toLocaleString('en-IN') : ''}
               onChange={(e) => handleAmountChange(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') handleNext(); }}
               placeholder="0"
               className="w-full bg-white border-2 border-[#004B87]/40 focus:border-[#004B87] rounded-2xl py-4 pl-12 pr-4 text-3xl font-black text-[#002D5A] focus:outline-none shadow-sm transition-all"
               autoFocus
@@ -771,6 +772,7 @@ export function BankFormModal({ type, onClose, initialData }: BankFormModalProps
                 setFormData({ ...formData, [fieldKey]: e.target.value });
                 setStepError('');
               }}
+              onKeyDown={(e) => { if (e.key === 'Enter') handleNext(); }}
               placeholder={currentStep.placeholder}
               className="w-full bg-white border-2 border-gray-200 focus:border-[#004B87] rounded-2xl py-3.5 pl-12 pr-4 text-base font-bold text-gray-900 focus:outline-none transition-all"
             />
@@ -799,6 +801,7 @@ export function BankFormModal({ type, onClose, initialData }: BankFormModalProps
             setFormData({ ...formData, [fieldKey]: e.target.value });
             setStepError('');
           }}
+          onKeyDown={(e) => { if (e.key === 'Enter') handleNext(); }}
           placeholder={currentStep.placeholder}
           className="w-full bg-white border-2 border-gray-200 focus:border-[#004B87] rounded-2xl py-3.5 px-4 text-base font-bold text-gray-900 focus:outline-none transition-all shadow-sm"
           autoFocus
@@ -837,7 +840,7 @@ export function BankFormModal({ type, onClose, initialData }: BankFormModalProps
         </header>
 
         {/* Scrollable Content */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-5 pb-28">
+        <div className="flex-1 overflow-y-auto p-4 space-y-5 pb-6">
           
           {/* Status Banner */}
           <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 flex items-start gap-3">
@@ -967,15 +970,17 @@ export function BankFormModal({ type, onClose, initialData }: BankFormModalProps
 
         </div>
 
-        {/* Sticky Actions */}
-        <div className="p-4 bg-white border-t border-gray-100 absolute bottom-0 inset-x-0 z-20 flex gap-3">
+        {/* Pinned Bottom Actions */}
+        <div className="p-4 bg-white border-t border-gray-200 shrink-0 z-30 flex gap-3 shadow-[0_-4px_16px_rgba(0,0,0,0.06)]">
           <button
+            type="button"
             onClick={() => setViewMode('wizard')}
-            className="flex-1 py-3.5 border border-gray-300 text-gray-700 font-bold rounded-full text-sm hover:bg-gray-50 transition-colors"
+            className="flex-1 py-3.5 border border-gray-300 text-gray-700 font-bold rounded-full text-sm hover:bg-gray-50 transition-colors flex items-center justify-center gap-1.5"
           >
-            Back & Edit
+            <ChevronLeft size={18} /> Back & Edit
           </button>
           <button
+            type="button"
             onClick={handleFinalSubmit}
             className="flex-[2] py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white font-black rounded-full text-sm transition-all shadow-lg shadow-emerald-600/30 flex items-center justify-center gap-2 active:scale-95"
           >
@@ -1068,8 +1073,8 @@ export function BankFormModal({ type, onClose, initialData }: BankFormModalProps
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-0 sm:p-4 animate-in fade-in duration-200">
-      <div className="w-full max-w-md bg-white h-screen sm:h-[90vh] sm:rounded-3xl shadow-2xl flex flex-col overflow-hidden relative">
+    <div className="fixed inset-0 z-[100] bg-black/70 backdrop-blur-sm flex items-center justify-center p-0 sm:p-4 animate-in fade-in duration-200">
+      <div className="w-full max-w-md bg-white h-full max-h-[100dvh] sm:h-[90vh] sm:max-h-[92vh] sm:rounded-3xl shadow-2xl flex flex-col overflow-hidden relative">
         {viewMode === 'review' && renderReviewScreen()}
         {viewMode === 'view_completed_slip' && renderCompletedSlipView()}
         {viewMode === 'success' && (
@@ -1117,7 +1122,7 @@ export function BankFormModal({ type, onClose, initialData }: BankFormModalProps
             </div>
 
             {/* Main Content Area */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-4 pb-28">
+            <div className="flex-1 overflow-y-auto p-4 space-y-4 pb-6">
               
               {/* Slip Visual Reference Card */}
               <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
@@ -1231,18 +1236,30 @@ export function BankFormModal({ type, onClose, initialData }: BankFormModalProps
                 <p className="text-[11px] text-gray-400 leading-snug">
                   ℹ️ {currentStep.helper}
                 </p>
+
+                {/* Inline Action Button for immediate step continuation */}
+                {currentStep.id !== 'signature' && (
+                  <button
+                    type="button"
+                    onClick={handleNext}
+                    className="w-full py-3 bg-[#004B87] hover:bg-blue-800 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-2 transition-all shadow-sm active:scale-95 mt-3"
+                  >
+                    <span>{currentStepIndex === steps.length - 1 ? 'Review Slip' : 'Continue / Next'}</span>
+                    <ChevronRight size={16} />
+                  </button>
+                )}
               </div>
 
             </div>
 
-            {/* Sticky Bottom Navigation */}
-            <div className="p-4 bg-white border-t border-gray-100 absolute bottom-0 inset-x-0 z-20 flex gap-3">
+            {/* Pinned Bottom Navigation */}
+            <div className="p-4 bg-white border-t border-gray-200 shrink-0 z-30 flex gap-3 shadow-[0_-4px_16px_rgba(0,0,0,0.06)]">
               <button
                 type="button"
                 onClick={handleBack}
-                className="flex-1 py-3.5 border border-gray-300 text-gray-700 font-bold rounded-full text-sm hover:bg-gray-50 transition-colors"
+                className="flex-1 py-3.5 border border-gray-300 text-gray-700 font-bold rounded-full text-sm hover:bg-gray-50 transition-colors flex items-center justify-center gap-1.5"
               >
-                Back
+                <ChevronLeft size={18} /> Back
               </button>
               
               <button
@@ -1250,7 +1267,8 @@ export function BankFormModal({ type, onClose, initialData }: BankFormModalProps
                 onClick={handleNext}
                 className="flex-[2] py-3.5 bg-[#004B87] hover:bg-blue-800 text-white font-bold rounded-full text-sm transition-all shadow-lg shadow-[#004B87]/30 flex items-center justify-center gap-2 active:scale-95"
               >
-                {currentStepIndex === steps.length - 1 ? 'Review Slip' : 'Next Step'} <ChevronRight size={18} />
+                <span>{currentStepIndex === steps.length - 1 ? 'Review Slip' : 'Continue / Next'}</span>
+                <ChevronRight size={18} />
               </button>
             </div>
 

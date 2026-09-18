@@ -2,6 +2,7 @@ import { useState, FormEvent } from 'react';
 import { Mail, Lock, User, Eye, EyeOff } from 'lucide-react';
 import AppLogo from '../assets/new-logo.png';
 import { usePopup } from '../context/PopupContext';
+import { setUserProfile, getUserProfile } from '../services/userProfileStore';
 
 export function AuthView({ onLogin }: { onLogin: () => void }) {
   const { showSuccess, showError, showInfo } = usePopup();
@@ -39,6 +40,25 @@ export function AuthView({ onLogin }: { onLogin: () => void }) {
         'Please enter your full name as shown on your government ID (Aadhaar/PAN).'
       );
       return;
+    }
+
+    // Save actual user credentials into user profile store
+    if (!isLogin && formData.name.trim()) {
+      setUserProfile({
+        name: formData.name.trim(),
+        email: formData.email.trim()
+      });
+    } else if (isLogin && formData.email.trim()) {
+      const existing = getUserProfile();
+      if (!existing.name) {
+        const username = formData.email.split('@')[0];
+        setUserProfile({
+          name: username.charAt(0).toUpperCase() + username.slice(1),
+          email: formData.email.trim()
+        });
+      } else {
+        setUserProfile({ email: formData.email.trim() });
+      }
     }
 
     if (isLogin) {
@@ -96,7 +116,7 @@ export function AuthView({ onLogin }: { onLogin: () => void }) {
                 </div>
                 <input 
                   type="text" 
-                  placeholder="e.g. Rohan Sharma"
+                  placeholder="Enter your full legal name"
                   value={formData.name}
                   onChange={e => setFormData({...formData, name: e.target.value})}
                   className="w-full border border-gray-300 rounded-xl py-3 pl-11 pr-4 text-sm focus:outline-none focus:border-[#004B87] focus:ring-1 focus:ring-[#004B87] transition-all bg-white"

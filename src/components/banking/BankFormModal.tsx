@@ -1,10 +1,9 @@
-import { useState, useRef, MouseEvent, TouchEvent } from 'react';
+import { useState, useEffect } from 'react';
 import { 
   X, 
   ChevronLeft, 
   ChevronRight, 
   Check, 
-  RotateCcw, 
   Volume2, 
   Eye, 
   Building2, 
@@ -15,23 +14,34 @@ import {
   ArrowRight,
   Maximize2,
   Minimize2,
-  ShieldCheck
+  Download,
+  AlertCircle
 } from 'lucide-react';
 
 import WithdrawalSlipImg from '../../assets/withdrawal-slip.png';
 import DepositSlipImg from '../../assets/deposit-slip.png';
 import BankTransferSlipImg from '../../assets/bank-transfer-slip.png';
 
+import { getUserProfile } from '../../services/userProfileStore';
+import { generateVerificationId, generateFormNumber, FormPrefix } from '../../services/verificationService';
+import { addBankRecord } from '../../services/bankAdminStore';
+import { generateCompletedSlip } from '../../utils/slipRenderer';
+import { AccountNumberBoxes } from './AccountNumberBoxes';
+import { SignaturePad } from './SignaturePad';
+import { SuccessAnimation } from './SuccessAnimation';
+
 export type BankServiceType = 'withdrawal' | 'deposit' | 'transfer';
 
 interface BankFormModalProps {
   type: BankServiceType;
   onClose: () => void;
+  initialData?: Record<string, string>;
 }
 
-// Number to Words in Indian numbering system
+// Convert numbers to Indian English Words
 function numberToIndianWords(numStr: string): string {
-  const num = parseInt(numStr.replace(/[^0-9]/g, ''), 10);
+  const clean = numStr.replace(/\D/g, '');
+  const num = parseInt(clean, 10);
   if (isNaN(num) || num <= 0) return '';
 
   const units = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 
@@ -77,214 +87,236 @@ function getTodayFormatted(): string {
   return `${day}/${month}/${year}`;
 }
 
-export function BankFormModal({ type, onClose }: BankFormModalProps) {
-  // Config per form type
+export function BankFormModal({ type, onClose, initialData }: BankFormModalProps) {
+  const profile = getUserProfile();
+
+  // Form Configurations — Asking strictly only required fields per service
   const formConfigs = {
     withdrawal: {
+      prefix: 'WD' as FormPrefix,
       title: 'Cash Withdrawal Slip',
       slipAsset: WithdrawalSlipImg,
       subtitle: 'Fill this slip to withdraw cash at the bank counter',
+      accountLength: 15,
       steps: [
         {
           id: 'name',
-          title: "Withdrawer's Name",
-          label: "Enter your full name",
-          placeholder: "e.g. Rohan Sharma",
-          helper: "As written in your bank passbook",
+          title: "Account Holder Name",
+          label: "Bank account mein registered naam",
+          placeholder: "Enter full name",
+          helper: "Must match the name printed on your bank passbook",
           raahaTip: {
             en: "Enter the account holder's full name as printed on your passbook.",
-            hi: "पासबुक में लिखा हुआ अपना पूरा नाम दर्ज करें।"
+            hi: "अपना वही नाम लिखिए जो बैंक अकाउंट और पासबुक में दर्ज है।"
           },
           highlight: { top: '50%', left: '50%', width: '46%', height: '8%' },
-          fieldKey: 'name'
-        },
-        {
-          id: 'date',
-          title: "Date",
-          label: "Date of withdrawal",
-          placeholder: "DD/MM/YYYY",
-          helper: "Withdrawal slip is valid for today's date",
-          raahaTip: {
-            en: "Today's date is entered here for counter verification.",
-            hi: "आज की तारीख दर्ज करें, पर्ची उसी दिन के लिए मान्य होती है।"
-          },
-          highlight: { top: '22%', left: '74%', width: '23%', height: '8%' },
-          fieldKey: 'date'
+          fieldKey: 'name',
+          required: true
         },
         {
           id: 'accountNumber',
           title: "Account Number",
-          label: "Your 15-digit bank account number",
+          label: "15-digit bank account number",
           placeholder: "Enter 15-digit account number",
           helper: "Found on the front page of your passbook",
           raahaTip: {
-            en: "Enter your 15-digit account number. Double check each number.",
-            hi: "अपनी पासबुक से देखकर 15 अंकों का खाता नंबर सही-सही भरें।"
+            en: "Enter each digit of your 15-digit bank account number in the boxes.",
+            hi: "अपनी पासबुक से देखकर 15 अंकों का खाता नंबर खानों में भरें।"
           },
           highlight: { top: '47%', left: '5%', width: '45%', height: '11%' },
-          fieldKey: 'accountNumber'
+          fieldKey: 'accountNumber',
+          required: true
         },
         {
           id: 'amount',
           title: "Amount in Numbers",
-          label: "Cash to withdraw",
-          placeholder: "₹ Enter amount",
-          helper: "e.g. ₹5,000",
+          label: "Cash to withdraw (₹)",
+          placeholder: "0",
+          helper: "Amount you wish to withdraw",
           raahaTip: {
-            en: "Enter the exact amount of cash you want to withdraw.",
-            hi: "जितने पैसे निकालने हैं, वह राशि अंकों में दर्ज करें।"
+            en: "Enter the cash amount you wish to withdraw.",
+            hi: "जितने पैसे निकालने हैं, वह राशि अंकों में लिखें।"
           },
           highlight: { top: '32%', left: '75%', width: '22%', height: '10%' },
-          fieldKey: 'amount'
+          fieldKey: 'amount',
+          required: true
         },
         {
           id: 'amountWords',
           title: "Amount in Words",
           label: "Amount written in words",
-          placeholder: "e.g. Five Thousand Rupees Only",
-          helper: "Always finish with 'Only'",
+          placeholder: "Auto-generated in words",
+          helper: "Always conclude with 'Rupees Only'",
           raahaTip: {
-            en: "We have auto-converted your amount into words. Check and confirm.",
-            hi: "हमने राशि को शब्दों में बदल दिया है, एक बार जांच लें।"
+            en: "We have converted your amount into words. Please verify.",
+            hi: "राशि को शब्दों में लिख दिया गया है, एक बार जांच लें।"
           },
           highlight: { top: '29%', left: '27%', width: '45%', height: '8%' },
-          fieldKey: 'amountWords'
+          fieldKey: 'amountWords',
+          required: true
+        },
+        {
+          id: 'date',
+          title: "Today's Date",
+          label: "Date of withdrawal",
+          placeholder: "DD/MM/YYYY",
+          helper: "Withdrawal slip is valid for today's date",
+          raahaTip: {
+            en: "Today's date is entered here for counter verification.",
+            hi: "आज की तारीख दर्ज करें। पर्ची उसी दिन के लिए मान्य होती है।"
+          },
+          highlight: { top: '22%', left: '74%', width: '23%', height: '8%' },
+          fieldKey: 'date',
+          required: true
         },
         {
           id: 'signature',
-          title: "Signature",
-          label: "Account holder's signature",
-          placeholder: "Sign below",
+          title: "Account Holder Signature",
+          label: "Hastakshar / Sign below",
+          placeholder: "Sign manually in the box",
           helper: "Must match your bank records",
           raahaTip: {
-            en: "Draw your signature in the box or confirm using your saved profile.",
-            hi: "नीचे बॉक्स में अपने हस्ताक्षर करें जो बैंक रिकॉर्ड से मिलते हों।"
+            en: "Sign manually inside the white box using your finger or mouse.",
+            hi: "सफ़ेद बॉक्स में अपनी उंगली या माउस से अपने असली हस्ताक्षर करें।"
           },
           highlight: { top: '48%', left: '50%', width: '25%', height: '6%' },
-          fieldKey: 'signature'
+          fieldKey: 'signature',
+          required: true
         }
       ]
     },
     deposit: {
+      prefix: 'DP' as FormPrefix,
       title: 'Cash Deposit Slip',
       slipAsset: DepositSlipImg,
-      subtitle: 'Fill this slip to deposit cash or cheques into an account',
+      subtitle: 'Fill this slip to deposit cash at the bank counter',
+      accountLength: 15,
       steps: [
         {
           id: 'branch',
           title: "Branch Name",
           label: "Bank branch name",
-          placeholder: "e.g. Main Branch, Bhopal",
-          helper: "The branch where you are depositing",
+          placeholder: "e.g. Main Branch",
+          helper: "Branch where you are depositing cash",
           raahaTip: {
-            en: "Enter the branch name of the bank where you are depositing.",
-            hi: "जिस बैंक शाखा में जमा कर रहे हैं, उसका नाम लिखें।"
+            en: "Enter the bank branch name where you are depositing.",
+            hi: "जिस बैंक शाखा में पैसे जमा कर रहे हैं, उसका नाम लिखें।"
           },
           highlight: { top: '15%', left: '79%', width: '18%', height: '6%' },
-          fieldKey: 'branch'
+          fieldKey: 'branch',
+          required: true
         },
         {
           id: 'accountNumber',
           title: "Account Number",
-          label: "Account number to deposit into",
+          label: "Jis account mein paise daalne hain",
           placeholder: "Enter 15-digit account number",
-          helper: "Double check the account number to avoid wrong deposit",
+          helper: "Double check the account number to ensure safe deposit",
           raahaTip: {
-            en: "Enter the 15-digit bank account number where money should go.",
+            en: "Enter the 15-digit bank account number where money should be credited.",
             hi: "जिस खाते में पैसे जमा करने हैं, उसका 15 अंकों का खाता नंबर लिखें।"
           },
           highlight: { top: '22%', left: '54%', width: '44%', height: '7%' },
-          fieldKey: 'accountNumber'
+          fieldKey: 'accountNumber',
+          required: true
         },
         {
           id: 'name',
           title: "Account Holder / Depositor Name",
-          label: "Name of the account holder",
-          placeholder: "e.g. Rohan Sharma",
-          helper: "Name of the person who owns the account",
+          label: "Khata-dharak ka naam",
+          placeholder: "Full name",
+          helper: "Name of the account holder or person depositing",
           raahaTip: {
-            en: "Write the account holder's name clearly in capital letters.",
-            hi: "खाताधारक का नाम साफ अक्षरों में लिखें।"
+            en: "Enter the account holder's name clearly.",
+            hi: "खाताधारक या जमाकर्ता का नाम लिखें।"
           },
           highlight: { top: '31%', left: '57%', width: '40%', height: '6%' },
-          fieldKey: 'name'
+          fieldKey: 'name',
+          required: true
         },
         {
           id: 'mobileNumber',
           title: "Mobile Number",
-          label: "Contact mobile number",
+          label: "SMS receipt mobile number",
           placeholder: "10-digit mobile number",
           helper: "For SMS deposit confirmation",
           raahaTip: {
-            en: "Provide your mobile number to receive instant SMS confirmation.",
-            hi: "जमा की पुष्टि के लिए अपना 10 अंकों का मोबाइल नंबर दर्ज करें।"
+            en: "Provide your mobile number to receive SMS confirmation.",
+            hi: "जमा की पुष्टि का SMS पाने के लिए 10 अंकों का फोन नंबर भरें।"
           },
           highlight: { top: '37%', left: '60%', width: '24%', height: '6%' },
-          fieldKey: 'mobileNumber'
+          fieldKey: 'mobileNumber',
+          required: false
         },
         {
           id: 'amount',
           title: "Deposit Amount",
-          label: "Total cash amount to deposit",
-          placeholder: "₹ Enter amount",
-          helper: "PAN card is required if depositing ₹50,000 or more",
+          label: "Total cash to deposit (₹)",
+          placeholder: "0",
+          helper: "Cash amount being deposited",
           raahaTip: {
-            en: "Enter the total amount in numbers. If ₹50,000 or more, PAN is needed.",
-            hi: "जमा की जाने वाली कुल राशि लिखें। 50,000 से अधिक पर पैन कार्ड चाहिए।"
+            en: "Enter the total cash amount. (PAN required if ₹50,000 or above).",
+            hi: "जमा की जाने वाली राशि लिखें। 50,000 रुपये से अधिक पर पैन कार्ड आवश्यक है।"
           },
           highlight: { top: '47%', left: '84%', width: '14%', height: '6%' },
-          fieldKey: 'amount'
+          fieldKey: 'amount',
+          required: true
         },
         {
           id: 'amountWords',
           title: "Amount in Words",
           label: "Deposit amount in words",
-          placeholder: "e.g. Ten Thousand Rupees Only",
-          helper: "Always conclude with 'Only'",
+          placeholder: "Auto-generated in words",
+          helper: "Always conclude with 'Rupees Only'",
           raahaTip: {
-            en: "Write the amount in words to prevent alteration.",
-            hi: "रुपये शब्दों में लिखें और अंत में 'Only' अवश्य लिखें।"
+            en: "Verify the deposit amount spelled out in words.",
+            hi: "शब्दों में लिखी राशि की जांच कर लें।"
           },
           highlight: { top: '43%', left: '58%', width: '40%', height: '6%' },
-          fieldKey: 'amountWords'
+          fieldKey: 'amountWords',
+          required: true
         },
         {
           id: 'date',
-          title: "Deposit Date",
-          label: "Date of cash deposit",
+          title: "Today's Date",
+          label: "Date of deposit",
           placeholder: "DD/MM/YYYY",
           helper: "Today's deposit date",
           raahaTip: {
             en: "Today's date is entered in the date boxes on the top right.",
-            hi: "ऊपर दायें कोने में आज की तारीख दर्ज करें।"
+            hi: "आज की तारीख दर्ज करें।"
           },
           highlight: { top: '8%', left: '84%', width: '14%', height: '6%' },
-          fieldKey: 'date'
+          fieldKey: 'date',
+          required: true
         },
         {
           id: 'signature',
-          title: "Depositor's Signature",
-          label: "Signature of person depositing",
-          placeholder: "Sign below",
-          helper: "Signature of the person handing over the cash",
+          title: "Depositor Signature",
+          label: "Depositor ke hastakshar",
+          placeholder: "Sign manually in the box",
+          helper: "Signature of person handing over cash",
           raahaTip: {
-            en: "Signature of the depositor at the bottom right corner.",
-            hi: "पर्ची के नीचे दायें कोने में जमाकर्ता के हस्ताक्षर करें।"
+            en: "Sign manually inside the white box.",
+            hi: "सफ़ेद बॉक्स में अपने हस्ताक्षर करें।"
           },
           highlight: { top: '78%', left: '85%', width: '13%', height: '7%' },
-          fieldKey: 'signature'
+          fieldKey: 'signature',
+          required: true
         }
       ]
     },
     transfer: {
+      prefix: 'TR' as FormPrefix,
       title: 'Bank Transfer Slip (NEFT / RTGS)',
       slipAsset: BankTransferSlipImg,
-      subtitle: 'Send money safely from your account to any bank account',
+      subtitle: 'Transfer money from your account to any bank account',
+      accountLength: 15,
       steps: [
         {
           id: 'date',
-          title: "Date",
-          label: "Application date",
+          title: "Application Date",
+          label: "Transfer application date",
           placeholder: "DD/MM/YYYY",
           helper: "Today's date",
           raahaTip: {
@@ -292,77 +324,83 @@ export function BankFormModal({ type, onClose }: BankFormModalProps) {
             hi: "ट्रांसफर फॉर्म पर आज की तारीख दर्ज करें।"
           },
           highlight: { top: '4%', left: '77%', width: '21%', height: '4%' },
-          fieldKey: 'date'
+          fieldKey: 'date',
+          required: true
         },
         {
           id: 'senderName',
-          title: "Sender / Applicant Name",
-          label: "Your full name",
-          placeholder: "e.g. Rohan Sharma",
-          helper: "Account holder sending the money",
+          title: "Sender (Applicant) Name",
+          label: "Aapka poora naam (Sender)",
+          placeholder: "Your full name",
+          helper: "Name registered in the debit bank account",
           raahaTip: {
             en: "Enter your name as registered in the sending bank account.",
             hi: "पैसे भेजने वाले का नाम (आपका नाम) यहाँ लिखें।"
           },
           highlight: { top: '28%', left: '19%', width: '76%', height: '3%' },
-          fieldKey: 'senderName'
+          fieldKey: 'senderName',
+          required: true
         },
         {
           id: 'senderAccount',
-          title: "Sender's Account Number",
-          label: "Your bank account number",
-          placeholder: "Account number to debit from",
+          title: "Sender Account Number",
+          label: "Jis account se paise katenge",
+          placeholder: "Your account number",
           helper: "Money will be deducted from this account",
           raahaTip: {
-            en: "Enter the account number from which money will be debited.",
+            en: "Enter your account number from which money will be debited.",
             hi: "जिस खाते से पैसे कटेंगे, उसका खाता नंबर दर्ज करें।"
           },
           highlight: { top: '23%', left: '22%', width: '42%', height: '3%' },
-          fieldKey: 'senderAccount'
+          fieldKey: 'senderAccount',
+          required: true
         },
         {
           id: 'amount',
           title: "Transfer Amount",
-          label: "Amount to transfer",
-          placeholder: "₹ Enter amount",
-          helper: "NEFT/RTGS transfer amount",
+          label: "Bhejne wali rashi (₹)",
+          placeholder: "0",
+          helper: "NEFT / RTGS transfer amount",
           raahaTip: {
-            en: "Enter the exact amount to be remitted to the beneficiary.",
-            hi: "जितनी राशि ट्रांसफर करनी है, वह यहाँ दर्ज करें।"
+            en: "Enter the amount to transfer.",
+            hi: "जितनी राशि ट्रांसफर करनी है, वह दर्ज करें।"
           },
           highlight: { top: '13%', left: '33%', width: '13%', height: '3%' },
-          fieldKey: 'amount'
+          fieldKey: 'amount',
+          required: true
         },
         {
           id: 'amountWords',
           title: "Amount in Words",
           label: "Transfer amount in words",
-          placeholder: "e.g. Twenty Five Thousand Rupees Only",
-          helper: "End with 'Only'",
+          placeholder: "Auto-generated in words",
+          helper: "Conclude with 'Rupees Only'",
           raahaTip: {
-            en: "Verify the transfer amount spelled out in words.",
+            en: "Check the transfer amount written in words.",
             hi: "राशि को शब्दों में लिखा गया है, कृपया जांच लें।"
           },
           highlight: { top: '13%', left: '56%', width: '38%', height: '3%' },
-          fieldKey: 'amountWords'
+          fieldKey: 'amountWords',
+          required: true
         },
         {
           id: 'beneficiaryName',
           title: "Beneficiary (Receiver) Name",
-          label: "Recipient's full name",
-          placeholder: "e.g. Priya Patel",
-          helper: "Name must match receiver's bank account",
+          label: "Jisko paise bhejne hain (Receiver)",
+          placeholder: "Recipient's full name",
+          helper: "Must match the receiver's bank account",
           raahaTip: {
-            en: "Enter the exact name of the person or entity receiving the money.",
-            hi: "जिस व्यक्ति को पैसे भेज रहे हैं, उनका नाम सही लिखें।"
+            en: "Enter the name of the person or entity receiving the money.",
+            hi: "जिस व्यक्ति को पैसे भेज रहे हैं, उनका नाम सही-सही लिखें।"
           },
           highlight: { top: '39%', left: '19%', width: '76%', height: '3%' },
-          fieldKey: 'beneficiaryName'
+          fieldKey: 'beneficiaryName',
+          required: true
         },
         {
           id: 'beneficiaryAccount',
           title: "Beneficiary Account Number",
-          label: "Receiver's bank account number",
+          label: "Receiver ka account number",
           placeholder: "Enter receiver's account number",
           helper: "Double check each digit carefully",
           raahaTip: {
@@ -370,59 +408,50 @@ export function BankFormModal({ type, onClose }: BankFormModalProps) {
             hi: "खाता नंबर बिल्कुल सही भरें क्योंकि ट्रांसफर इसी नंबर पर होता है।"
           },
           highlight: { top: '42%', left: '22%', width: '42%', height: '3%' },
-          fieldKey: 'beneficiaryAccount'
+          fieldKey: 'beneficiaryAccount',
+          required: true
         },
         {
           id: 'bankName',
           title: "Beneficiary Bank & Branch",
-          label: "Receiver's bank name",
-          placeholder: "e.g. State Bank of India, Indore",
-          helper: "Name of receiver's bank",
+          label: "Receiver ke bank aur branch ka naam",
+          placeholder: "e.g. State Bank of India, Main Branch",
+          helper: "Bank & branch of recipient",
           raahaTip: {
-            en: "Enter the bank name and city/branch of the beneficiary.",
+            en: "Enter the bank name and branch of the receiver.",
             hi: "सामने वाले के बैंक का नाम और शाखा लिखें।"
           },
           highlight: { top: '45%', left: '19%', width: '76%', height: '3%' },
-          fieldKey: 'bankName'
+          fieldKey: 'bankName',
+          required: true
         },
         {
           id: 'ifscCode',
           title: "IFSC Code",
           label: "11-character IFSC code",
           placeholder: "e.g. SBIN0001234",
-          helper: "Found on receiver's passbook or cheque leaf",
+          helper: "Found on receiver's passbook or cheque",
           raahaTip: {
             en: "IFSC is the unique 11-digit code identifying the destination branch.",
             hi: "IFSC कोड 11 अक्षरों का होता है जो पासबुक या चेक पर छपा होता है।"
           },
           highlight: { top: '48%', left: '22%', width: '29%', height: '3%' },
-          fieldKey: 'ifscCode'
-        },
-        {
-          id: 'mobileNumber',
-          title: "Sender's Mobile Number",
-          label: "Your mobile number",
-          placeholder: "10-digit mobile number",
-          helper: "For transaction UTR / reference SMS",
-          raahaTip: {
-            en: "Your mobile number is needed to send the transfer UTR number.",
-            hi: "ट्रांसफर की UTR रसीद SMS पाने के लिए अपना फोन नंबर लिखें।"
-          },
-          highlight: { top: '34%', left: '22%', width: '27%', height: '3%' },
-          fieldKey: 'mobileNumber'
+          fieldKey: 'ifscCode',
+          required: true
         },
         {
           id: 'signature',
           title: "Applicant's Signature",
-          label: "Signature of primary applicant",
-          placeholder: "Sign below",
+          label: "Applicant signature",
+          placeholder: "Sign manually in the box",
           helper: "Authorizes the bank to debit your account",
           raahaTip: {
-            en: "Sign in the primary applicant box at the bottom of the form.",
-            hi: "फॉर्म के नीचे प्राथमिक आवेदक के हस्ताक्षर वाले बॉक्स में साइन करें।"
+            en: "Sign manually inside the white box.",
+            hi: "सफ़ेद बॉक्स में प्राथमिक आवेदक के हस्ताक्षर करें।"
           },
           highlight: { top: '78%', left: '2%', width: '30%', height: '6%' },
-          fieldKey: 'signature'
+          fieldKey: 'signature',
+          required: true
         }
       ]
     }
@@ -431,123 +460,151 @@ export function BankFormModal({ type, onClose }: BankFormModalProps) {
   const currentConfig = formConfigs[type];
   const steps = currentConfig.steps;
 
-  // View mode: 'wizard' | 'review' | 'success' | 'view_completed_slip'
+  // View state
   const [viewMode, setViewMode] = useState<'wizard' | 'review' | 'success' | 'view_completed_slip'>('wizard');
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const [isSlipExpanded, setIsSlipExpanded] = useState(false);
-  const [raahaLang, setRaahaLang] = useState<'en' | 'hi'>('en');
+  const [raahaLang, setRaahaLang] = useState<'en' | 'hi'>('hi');
   const [isVoiceSpeaking, setIsVoiceSpeaking] = useState(false);
+  const [stepError, setStepError] = useState('');
 
-  // Form State
-  const [formData, setFormData] = useState<Record<string, string>>({
-    name: 'Rohan Sharma',
-    date: getTodayFormatted(),
-    accountNumber: '501004928172910',
-    amount: '10000',
-    amountWords: 'Ten Thousand Rupees Only',
-    signature: 'Rohan Sharma',
-    branch: 'Main Market Branch',
-    mobileNumber: '9876543210',
-    senderName: 'Rohan Sharma',
-    senderAccount: '501004928172910',
-    beneficiaryName: 'Priya Patel',
-    beneficiaryAccount: '308912401849',
-    bankName: 'State Bank of India',
-    ifscCode: 'SBIN0001234'
+  // Form State: Initialize cleanly from profile if available, otherwise empty (NEVER fake Rohan Sharma)
+  const [formData, setFormData] = useState<Record<string, string>>(() => {
+    const today = getTodayFormatted();
+    const defaults: Record<string, string> = {
+      date: today,
+      name: profile.name || '',
+      senderName: profile.name || '',
+      mobileNumber: profile.phone || '',
+      branch: '',
+      accountNumber: '',
+      senderAccount: '',
+      beneficiaryName: '',
+      beneficiaryAccount: '',
+      bankName: '',
+      ifscCode: '',
+      amount: '',
+      amountWords: '',
+      signature: ''
+    };
+
+    if (initialData) {
+      Object.assign(defaults, initialData);
+      if (initialData.amount) {
+        defaults.amountWords = numberToIndianWords(initialData.amount);
+      }
+    }
+
+    return defaults;
   });
 
-  const [signatureDrawn, setSignatureDrawn] = useState(true);
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const [isDrawing, setIsDrawing] = useState(false);
+  // Rendered slip and verification ID state
+  const [completedSlipUrl, setCompletedSlipUrl] = useState<string>('');
+  const [isRenderingSlip, setIsRenderingSlip] = useState(false);
+  const [verificationId, setVerificationId] = useState<string>('');
+  const [formNumber, setFormNumber] = useState<string>('');
 
   const currentStep = steps[currentStepIndex];
 
-  // Auto-update amount in words when amount changes
+  // Amount formatting and live sync with words
   const handleAmountChange = (val: string) => {
-    const rawNumber = val.replace(/[^0-9]/g, '');
-    const words = numberToIndianWords(rawNumber);
+    const cleanNum = val.replace(/\D/g, '');
+    const words = numberToIndianWords(cleanNum);
     setFormData(prev => ({
       ...prev,
-      amount: rawNumber,
-      amountWords: words || prev.amountWords
+      amount: cleanNum,
+      amountWords: words
     }));
+    setStepError('');
   };
 
-  // Canvas drawing handlers for signature
-  const startDrawing = (e: MouseEvent<HTMLCanvasElement> | TouchEvent<HTMLCanvasElement>) => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    setIsDrawing(true);
-    setSignatureDrawn(true);
+  // Generate completed physical slip preview whenever entering review screen
+  useEffect(() => {
+    if (viewMode === 'review') {
+      let isCancelled = false;
+      setIsRenderingSlip(true);
+      generateCompletedSlip({
+        type,
+        data: formData,
+        signatureDataUrl: formData.signature,
+        verificationId: verificationId || undefined
+      })
+        .then(url => {
+          if (!isCancelled) {
+            setCompletedSlipUrl(url);
+            setIsRenderingSlip(false);
+          }
+        })
+        .catch(err => {
+          console.error('Failed to render completed physical slip:', err);
+          if (!isCancelled) setIsRenderingSlip(false);
+        });
 
-    const rect = canvas.getBoundingClientRect();
-    const x = 'touches' in e ? e.touches[0].clientX - rect.left : e.clientX - rect.left;
-    const y = 'touches' in e ? e.touches[0].clientY - rect.top : e.clientY - rect.top;
-
-    ctx.beginPath();
-    ctx.moveTo(x, y);
-    ctx.strokeStyle = '#002D5A';
-    ctx.lineWidth = 2.5;
-    ctx.lineCap = 'round';
-  };
-
-  const draw = (e: MouseEvent<HTMLCanvasElement> | TouchEvent<HTMLCanvasElement>) => {
-    if (!isDrawing) return;
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    const rect = canvas.getBoundingClientRect();
-    const x = 'touches' in e ? e.touches[0].clientX - rect.left : e.clientX - rect.left;
-    const y = 'touches' in e ? e.touches[0].clientY - rect.top : e.clientY - rect.top;
-
-    ctx.lineTo(x, y);
-    ctx.stroke();
-  };
-
-  const stopDrawing = () => {
-    setIsDrawing(false);
-  };
-
-  const clearSignature = () => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (ctx) {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      return () => {
+        isCancelled = true;
+      };
     }
-    setSignatureDrawn(false);
-    setFormData(prev => ({ ...prev, signature: '' }));
-  };
-
-  const adoptSavedSignature = () => {
-    setSignatureDrawn(true);
-    setFormData(prev => ({ ...prev, signature: 'Rohan Sharma (e-Signed)' }));
-    const canvas = canvasRef.current;
-    if (canvas) {
-      const ctx = canvas.getContext('2d');
-      if (ctx) {
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        ctx.font = 'italic 28px "Caveat", cursive, sans-serif';
-        ctx.fillStyle = '#002D5A';
-        ctx.fillText('Rohan Sharma', 40, 60);
-      }
-    }
-  };
+  }, [viewMode, formData, type, verificationId]);
 
   // Voice narration simulation
   const triggerVoiceTip = () => {
     setIsVoiceSpeaking(true);
-    setTimeout(() => {
-      setIsVoiceSpeaking(false);
-    }, 2500);
+    if ('speechSynthesis' in window) {
+      try {
+        const text = currentStep.raahaTip[raahaLang];
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.lang = raahaLang === 'hi' ? 'hi-IN' : 'en-IN';
+        utterance.onend = () => setIsVoiceSpeaking(false);
+        utterance.onerror = () => setIsVoiceSpeaking(false);
+        window.speechSynthesis.cancel();
+        window.speechSynthesis.speak(utterance);
+        return;
+      } catch (e) {
+        // fallback
+      }
+    }
+    setTimeout(() => setIsVoiceSpeaking(false), 2800);
   };
 
-  // Next / Back navigation
+  // Validate step before advancing
+  const validateCurrentStep = (): boolean => {
+    const key = currentStep.fieldKey;
+    const val = (formData[key] || '').trim();
+
+    if (currentStep.required) {
+      if (!val) {
+        setStepError(`Please provide ${currentStep.title} to continue.`);
+        return false;
+      }
+      if (currentStep.id === 'accountNumber' || currentStep.id === 'senderAccount') {
+        const cleanDigits = val.replace(/\D/g, '');
+        if (cleanDigits.length < 11) {
+          setStepError(`Please enter a valid bank account number (at least 11 digits).`);
+          return false;
+        }
+      }
+      if (currentStep.id === 'signature') {
+        if (!formData.signature || !formData.signature.startsWith('data:image')) {
+          setStepError('Please sign manually inside the white box before continuing.');
+          return false;
+        }
+      }
+      if (currentStep.id === 'amount') {
+        const num = parseInt(val, 10);
+        if (isNaN(num) || num <= 0) {
+          setStepError('Please enter a valid amount greater than ₹0.');
+          return false;
+        }
+      }
+    }
+
+    setStepError('');
+    return true;
+  };
+
   const handleNext = () => {
+    if (!validateCurrentStep()) return;
+
     if (currentStepIndex < steps.length - 1) {
       setCurrentStepIndex(currentStepIndex + 1);
     } else {
@@ -556,6 +613,7 @@ export function BankFormModal({ type, onClose }: BankFormModalProps) {
   };
 
   const handleBack = () => {
+    setStepError('');
     if (currentStepIndex > 0) {
       setCurrentStepIndex(currentStepIndex - 1);
     } else {
@@ -563,75 +621,105 @@ export function BankFormModal({ type, onClose }: BankFormModalProps) {
     }
   };
 
-  // Render Step Input Field
+  // Handle final submission (DONE — DETAILS ARE CORRECT)
+  const handleFinalSubmit = async () => {
+    // 1. Generate Unique Verification ID ONCE
+    const uniqueId = generateVerificationId(currentConfig.prefix);
+    const fNum = generateFormNumber(currentConfig.prefix);
+    setVerificationId(uniqueId);
+    setFormNumber(fNum);
+
+    // 2. Render completed slip with the unique Verification ID stamped
+    let finalSlipDataUrl = completedSlipUrl;
+    try {
+      finalSlipDataUrl = await generateCompletedSlip({
+        type,
+        data: formData,
+        signatureDataUrl: formData.signature,
+        verificationId: uniqueId
+      });
+      setCompletedSlipUrl(finalSlipDataUrl);
+    } catch (e) {
+      console.warn('Error rendering final slip stamp:', e);
+    }
+
+    // 3. Save to Bank Admin Store immediately
+    const record = {
+      id: uniqueId,
+      formNumber: fNum,
+      type,
+      title: currentConfig.title,
+      customerName: formData.name || formData.senderName || 'Account Holder',
+      accountNumber: formData.accountNumber || formData.senderAccount || '',
+      amount: formData.amount,
+      amountWords: formData.amountWords,
+      date: formData.date || getTodayFormatted(),
+      signatureDataUrl: formData.signature,
+      completedSlipImageUrl: finalSlipDataUrl,
+      details: { ...formData },
+      status: 'READY_FOR_BANK' as const,
+      submittedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+
+    addBankRecord(record);
+
+    // 4. Transition to Success Animation Screen
+    setViewMode('success');
+  };
+
+  // Render active step input
   const renderStepInput = () => {
     const fieldKey = currentStep.fieldKey;
     const value = formData[fieldKey] || '';
 
+    // Signature Pad Step
     if (currentStep.id === 'signature') {
       return (
-        <div className="space-y-4">
-          <div className="bg-amber-50/70 border border-amber-200/70 rounded-xl p-3 flex items-start gap-2.5">
-            <ShieldCheck size={18} className="text-amber-700 shrink-0 mt-0.5" />
-            <p className="text-xs text-amber-800 leading-relaxed">
-              Draw your signature in the box below, or click to adopt your verified citizen signature.
-            </p>
-          </div>
-
-          <div className="relative border-2 border-dashed border-gray-300 rounded-2xl bg-gray-50 overflow-hidden touch-none h-36 flex items-center justify-center">
-            <canvas
-              ref={canvasRef}
-              width={340}
-              height={140}
-              onMouseDown={startDrawing}
-              onMouseMove={draw}
-              onMouseUp={stopDrawing}
-              onMouseLeave={stopDrawing}
-              onTouchStart={startDrawing}
-              onTouchMove={draw}
-              onTouchEnd={stopDrawing}
-              className="w-full h-full cursor-crosshair"
-            />
-            {!signatureDrawn && (
-              <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none text-gray-400">
-                <Edit3 size={24} className="mb-1" />
-                <span className="text-xs font-medium">Sign here with finger or mouse</span>
-              </div>
-            )}
-          </div>
-
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={clearSignature}
-              className="flex-1 py-2 px-3 border border-gray-200 text-gray-600 rounded-xl text-xs font-semibold hover:bg-gray-50 flex items-center justify-center gap-1.5"
-            >
-              <RotateCcw size={14} /> Clear
-            </button>
-            <button
-              type="button"
-              onClick={adoptSavedSignature}
-              className="flex-1 py-2 px-3 bg-blue-50 text-[#004B87] border border-blue-200 rounded-xl text-xs font-bold hover:bg-blue-100 flex items-center justify-center gap-1.5"
-            >
-              <CheckCircle2 size={14} /> Use Saved Signature
-            </button>
-          </div>
-        </div>
+        <SignaturePad
+          initialDataUrl={formData.signature}
+          onSave={(dataUrl) => {
+            setFormData(prev => ({ ...prev, signature: dataUrl }));
+            if (dataUrl) setStepError('');
+          }}
+          onClear={() => {
+            setFormData(prev => ({ ...prev, signature: '' }));
+          }}
+          requiredError={stepError}
+        />
       );
     }
 
+    // Account Number with individual digit boxes
+    if (currentStep.id === 'accountNumber' || currentStep.id === 'senderAccount' || currentStep.id === 'beneficiaryAccount') {
+      return (
+        <AccountNumberBoxes
+          value={value}
+          onChange={(val) => {
+            setFormData(prev => ({ ...prev, [fieldKey]: val }));
+            setStepError('');
+          }}
+          length={currentConfig.accountLength}
+          label={currentStep.label}
+          helperText={currentStep.helper}
+        />
+      );
+    }
+
+    // Amount input with live Indian words
     if (currentStep.id === 'amount') {
-      const quickAmounts = [1000, 2000, 5000, 10000, 25000];
+      const quickAmounts = [1000, 2000, 5000, 10000, 25000, 50000];
       return (
         <div className="space-y-4">
           <div className="relative">
-            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-2xl font-bold text-gray-700">₹</span>
+            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-3xl font-extrabold text-[#002D5A]">₹</span>
             <input
               type="text"
+              inputMode="numeric"
               value={value ? Number(value).toLocaleString('en-IN') : ''}
               onChange={(e) => handleAmountChange(e.target.value)}
               placeholder="0"
-              className="w-full bg-white border-2 border-[#004B87]/30 focus:border-[#004B87] rounded-2xl py-4 pl-12 pr-4 text-2xl font-extrabold text-[#002D5A] focus:outline-none shadow-sm transition-all"
+              className="w-full bg-white border-2 border-[#004B87]/40 focus:border-[#004B87] rounded-2xl py-4 pl-12 pr-4 text-3xl font-black text-[#002D5A] focus:outline-none shadow-sm transition-all"
               autoFocus
             />
           </div>
@@ -656,16 +744,21 @@ export function BankFormModal({ type, onClose }: BankFormModalProps) {
             </div>
           </div>
 
-          {formData.amountWords && (
-            <div className="bg-blue-50/70 border border-blue-100 rounded-xl p-3">
-              <span className="text-[10px] font-bold text-blue-700 uppercase tracking-wider block">In Words</span>
-              <p className="text-xs font-semibold text-gray-900 mt-0.5">{formData.amountWords}</p>
+          {formData.amountWords ? (
+            <div className="bg-blue-50/80 border border-blue-200 rounded-xl p-3.5">
+              <span className="text-[10px] font-bold text-blue-700 uppercase tracking-wider block">In Words (Shabdon Mein)</span>
+              <p className="text-sm font-bold text-[#002D5A] mt-0.5">{formData.amountWords}</p>
+            </div>
+          ) : (
+            <div className="text-xs text-gray-400 italic">
+              Amount in words will appear here automatically.
             </div>
           )}
         </div>
       );
     }
 
+    // Date Step (dynamic today's date)
     if (currentStep.id === 'date') {
       return (
         <div className="space-y-3">
@@ -674,43 +767,60 @@ export function BankFormModal({ type, onClose }: BankFormModalProps) {
             <input
               type="text"
               value={value}
-              onChange={(e) => setFormData({ ...formData, [fieldKey]: e.target.value })}
+              onChange={(e) => {
+                setFormData({ ...formData, [fieldKey]: e.target.value });
+                setStepError('');
+              }}
               placeholder={currentStep.placeholder}
               className="w-full bg-white border-2 border-gray-200 focus:border-[#004B87] rounded-2xl py-3.5 pl-12 pr-4 text-base font-bold text-gray-900 focus:outline-none transition-all"
             />
           </div>
           <button
             type="button"
-            onClick={() => setFormData({ ...formData, [fieldKey]: getTodayFormatted() })}
+            onClick={() => {
+              setFormData({ ...formData, [fieldKey]: getTodayFormatted() });
+              setStepError('');
+            }}
             className="inline-flex items-center gap-1.5 text-xs font-bold text-[#004B87] bg-blue-50 border border-blue-200 px-3 py-1.5 rounded-full hover:bg-blue-100 transition-colors"
           >
-            <Calendar size={14} /> Set Today ({getTodayFormatted()})
+            <Calendar size={14} /> Use Today's Date ({getTodayFormatted()})
           </button>
         </div>
       );
     }
 
+    // Default text input (Name, Branch, etc.)
     return (
       <div className="space-y-2">
         <input
           type="text"
           value={value}
-          onChange={(e) => setFormData({ ...formData, [fieldKey]: e.target.value })}
+          onChange={(e) => {
+            setFormData({ ...formData, [fieldKey]: e.target.value });
+            setStepError('');
+          }}
           placeholder={currentStep.placeholder}
           className="w-full bg-white border-2 border-gray-200 focus:border-[#004B87] rounded-2xl py-3.5 px-4 text-base font-bold text-gray-900 focus:outline-none transition-all shadow-sm"
           autoFocus
         />
-        {currentStep.id === 'accountNumber' && (
-          <div className="flex justify-between items-center px-1">
-            <span className="text-[11px] text-gray-400">Standard 15-digit bank account format</span>
-            <span className="text-[11px] font-bold text-blue-600">{value.length}/15 digits</span>
-          </div>
+        {/* Profile Autofill suggestion if available */}
+        {profile.name && (currentStep.id === 'name' || currentStep.id === 'senderName') && value !== profile.name && (
+          <button
+            type="button"
+            onClick={() => {
+              setFormData({ ...formData, [fieldKey]: profile.name });
+              setStepError('');
+            }}
+            className="inline-flex items-center gap-1.5 text-xs font-bold text-[#004B87] bg-blue-50 border border-blue-200 px-3 py-1 rounded-full hover:bg-blue-100 transition-colors"
+          >
+            <CheckCircle2 size={13} /> Use My Saved Name: {profile.name}
+          </button>
         )}
       </div>
     );
   };
 
-  // Review Screen Component
+  // Review Screen (Parts 8 & 9)
   const renderReviewScreen = () => {
     return (
       <div className="flex flex-col h-full bg-[#F9FAFB]">
@@ -720,38 +830,92 @@ export function BankFormModal({ type, onClose }: BankFormModalProps) {
             <ChevronLeft size={24} />
           </button>
           <div className="text-center">
-            <h2 className="text-lg font-bold text-gray-900">Review Form Details</h2>
+            <h2 className="text-lg font-bold text-gray-900">CHECK YOUR DETAILS</h2>
             <p className="text-[11px] text-gray-500">{currentConfig.title}</p>
           </div>
           <div className="w-8" />
         </header>
 
-        {/* Scrollable Summary */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-4 pb-28">
+        {/* Scrollable Content */}
+        <div className="flex-1 overflow-y-auto p-4 space-y-5 pb-28">
+          
+          {/* Status Banner */}
           <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 flex items-start gap-3">
             <CheckCircle2 size={20} className="text-emerald-600 shrink-0 mt-0.5" />
             <div>
-              <h4 className="text-xs font-bold text-emerald-900">Form Ready for Bank Counter</h4>
+              <h4 className="text-xs font-bold text-emerald-900">Completed Physical Slip Generated</h4>
               <p className="text-[11px] text-emerald-700 mt-0.5 leading-relaxed">
-                Please verify the details below. Once confirmed, you can present this completed digital slip directly to the cashier.
+                Your entered information and actual drawn signature have been placed onto the official physical bank slip below.
               </p>
             </div>
           </div>
 
-          {/* Form Details Card */}
+          {/* PHYSICAL COMPLETED SLIP PREVIEW (Part 8 & 39) */}
+          <div className="bg-white rounded-2xl border border-gray-200 shadow-md overflow-hidden">
+            <div className="p-3 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
+              <span className="text-xs font-bold text-gray-800 flex items-center gap-1.5">
+                <FileText size={15} className="text-[#004B87]" /> Actual Completed Physical Slip
+              </span>
+              <button
+                onClick={() => setViewMode('view_completed_slip')}
+                className="text-xs font-bold text-[#004B87] hover:underline flex items-center gap-1"
+              >
+                <Maximize2 size={13} /> Full Screen
+              </button>
+            </div>
+
+            <div className="p-2 bg-gray-100 flex items-center justify-center min-h-[160px] relative">
+              {isRenderingSlip ? (
+                <div className="flex flex-col items-center justify-center py-8 text-gray-500 text-xs">
+                  <div className="w-6 h-6 border-2 border-[#004B87] border-t-transparent rounded-full animate-spin mb-2" />
+                  Generating physical slip overlay...
+                </div>
+              ) : completedSlipUrl ? (
+                <img
+                  src={completedSlipUrl}
+                  alt="Completed Bank Slip"
+                  className="w-full h-auto object-contain rounded border border-gray-300 shadow-sm cursor-pointer"
+                  onClick={() => setViewMode('view_completed_slip')}
+                />
+              ) : (
+                <div className="text-xs text-gray-400">Loading slip preview...</div>
+              )}
+            </div>
+
+            <div className="p-2.5 text-center bg-blue-50/60 border-t border-blue-100 text-[11px] text-blue-900 font-medium">
+              🔍 Tap slip to inspect full high-resolution image with your actual signature.
+            </div>
+          </div>
+
+          {/* User Entered Values Card */}
           <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden divide-y divide-gray-100">
+            <div className="p-3.5 bg-gray-50/70 border-b border-gray-100 font-bold text-xs text-gray-700">
+              Entered Form Fields
+            </div>
             {steps.map((step, idx) => {
               const val = formData[step.fieldKey];
               const isAmount = step.id === 'amount';
+              const isSig = step.id === 'signature';
+
               return (
                 <div key={step.id} className="p-3.5 flex items-center justify-between hover:bg-gray-50/80 transition-colors">
-                  <div className="flex-1 pr-3">
+                  <div className="flex-1 pr-3 min-w-0">
                     <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400 block">
                       {step.title}
                     </span>
-                    <span className={`block mt-0.5 font-bold ${isAmount ? 'text-lg text-[#004B87]' : 'text-sm text-gray-900'}`}>
-                      {isAmount ? `₹${Number(val || 0).toLocaleString('en-IN')}` : (val || '—')}
-                    </span>
+                    {isSig ? (
+                      val ? (
+                        <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full mt-1">
+                          <Check size={12} /> Manually Signed
+                        </span>
+                      ) : (
+                        <span className="text-xs font-bold text-red-600">Not signed</span>
+                      )
+                    ) : (
+                      <span className={`block mt-0.5 truncate font-bold ${isAmount ? 'text-lg text-[#004B87]' : 'text-sm text-gray-900'}`}>
+                        {isAmount ? `₹${Number(val || 0).toLocaleString('en-IN')}` : (val || '—')}
+                      </span>
+                    )}
                   </div>
                   <button
                     onClick={() => {
@@ -768,10 +932,39 @@ export function BankFormModal({ type, onClose }: BankFormModalProps) {
             })}
           </div>
 
-          {/* Context Notice */}
-          <div className="p-3 bg-gray-50 rounded-xl border border-gray-200/80 text-[11px] text-gray-500 leading-relaxed text-center">
-            🔒 Bank form data is kept securely on your device. No financial transaction occurs until verified at the branch counter.
+          {/* FINAL CHECK CHECKLIST (Part 9) */}
+          <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-4 space-y-3">
+            <h4 className="text-xs font-bold text-gray-900 uppercase tracking-wider">
+              Check once before submitting
+            </h4>
+            <div className="space-y-2 text-xs">
+              <div className="flex items-center gap-2 text-emerald-700 font-medium">
+                <CheckCircle2 size={16} />
+                <span>Name: <strong>{formData.name || formData.senderName || 'Provided'}</strong></span>
+              </div>
+              <div className="flex items-center gap-2 text-emerald-700 font-medium">
+                <CheckCircle2 size={16} />
+                <span>Account Number: <strong>{formData.accountNumber || formData.senderAccount || 'Provided'}</strong></span>
+              </div>
+              <div className="flex items-center gap-2 text-emerald-700 font-medium">
+                <CheckCircle2 size={16} />
+                <span>Amount: <strong>₹{Number(formData.amount || 0).toLocaleString('en-IN')}</strong></span>
+              </div>
+              <div className="flex items-center gap-2 text-emerald-700 font-medium">
+                <CheckCircle2 size={16} />
+                <span>Amount in Words: <strong>{formData.amountWords || 'Provided'}</strong></span>
+              </div>
+              <div className="flex items-center gap-2 text-emerald-700 font-medium">
+                <CheckCircle2 size={16} />
+                <span>Date: <strong>{formData.date || getTodayFormatted()}</strong></span>
+              </div>
+              <div className="flex items-center gap-2 text-emerald-700 font-medium">
+                <CheckCircle2 size={16} />
+                <span>Signature: <strong>Manually Drawn</strong></span>
+              </div>
+            </div>
           </div>
+
         </div>
 
         {/* Sticky Actions */}
@@ -780,95 +973,62 @@ export function BankFormModal({ type, onClose }: BankFormModalProps) {
             onClick={() => setViewMode('wizard')}
             className="flex-1 py-3.5 border border-gray-300 text-gray-700 font-bold rounded-full text-sm hover:bg-gray-50 transition-colors"
           >
-            Back
+            Back & Edit
           </button>
           <button
-            onClick={() => setViewMode('success')}
-            className="flex-[2] py-3.5 bg-[#004B87] hover:bg-blue-800 text-white font-bold rounded-full text-sm transition-all shadow-lg shadow-[#004B87]/30 flex items-center justify-center gap-2 active:scale-95"
+            onClick={handleFinalSubmit}
+            className="flex-[2] py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white font-black rounded-full text-sm transition-all shadow-lg shadow-emerald-600/30 flex items-center justify-center gap-2 active:scale-95"
           >
-            Confirm & Complete <ArrowRight size={18} />
+            <Check size={18} strokeWidth={3} /> DONE — DETAILS ARE CORRECT
           </button>
         </div>
       </div>
     );
   };
 
-  // Success Screen Component
-  const renderSuccessScreen = () => {
-    return (
-      <div className="flex flex-col h-full bg-white items-center justify-center p-6 text-center animate-in fade-in duration-300 relative">
-        <div className="w-20 h-20 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mb-6 shadow-xl shadow-emerald-500/20 animate-in zoom-in-50 duration-300">
-          <Check size={44} strokeWidth={3} />
-        </div>
-
-        <h2 className="text-2xl font-black text-gray-900 mb-2">
-          Form Completed
-        </h2>
-
-        <p className="text-base font-semibold text-[#004B87] mb-6">
-          "Your form is ready."
-        </p>
-
-        <div className="w-full max-w-sm bg-[#F9FAFB] border border-gray-200 rounded-2xl p-5 mb-8 shadow-sm">
-          <div className="w-10 h-10 rounded-full bg-blue-50 text-[#004B87] flex items-center justify-center mx-auto mb-3">
-            <Building2 size={22} />
-          </div>
-          <h4 className="text-sm font-bold text-gray-900 mb-1">Next Step</h4>
-          <p className="text-xs text-gray-600 leading-relaxed">
-            Please show this completed form at the <strong>bank counter</strong> to deposit or withdraw your cash.
-          </p>
-        </div>
-
-        <div className="w-full max-w-sm space-y-3">
-          <button
-            onClick={onClose}
-            className="w-full py-4 bg-[#004B87] hover:bg-blue-800 text-white font-bold rounded-full text-base transition-all shadow-lg shadow-[#004B87]/30 active:scale-95"
-          >
-            Done
-          </button>
-          
-          <button
-            onClick={() => setViewMode('view_completed_slip')}
-            className="w-full py-3.5 bg-white border-2 border-gray-200 text-gray-800 font-bold rounded-full text-sm hover:bg-gray-50 transition-colors flex items-center justify-center gap-2"
-          >
-            <Eye size={18} className="text-[#004B87]" /> View Form
-          </button>
-        </div>
-      </div>
-    );
-  };
-
-  // Completed Slip Preview Component
+  // Full Screen Completed Slip View
   const renderCompletedSlipView = () => {
     return (
-      <div className="flex flex-col h-full bg-gray-900 text-white">
+      <div className="flex flex-col h-full bg-gray-950 text-white">
         <header className="px-4 pt-12 pb-4 bg-gray-900 border-b border-gray-800 flex items-center justify-between">
-          <button onClick={() => setViewMode('success')} className="p-2 text-white">
+          <button onClick={() => setViewMode(verificationId ? 'success' : 'review')} className="p-2 text-white">
             <ChevronLeft size={24} />
           </button>
           <div className="text-center">
             <h3 className="font-bold text-sm text-white">Completed {currentConfig.title}</h3>
-            <p className="text-[10px] text-gray-400">Show to Bank Cashier</p>
+            {verificationId && <p className="text-[10px] text-emerald-400 font-mono">{verificationId}</p>}
           </div>
-          <button onClick={onClose} className="p-2 text-white">
-            <X size={20} />
-          </button>
+          {completedSlipUrl ? (
+            <a
+              href={completedSlipUrl}
+              download={`${type}-slip-${getTodayFormatted().replace(/\//g, '')}.png`}
+              className="p-2 text-blue-400 hover:text-white"
+              title="Download Slip Image"
+            >
+              <Download size={20} />
+            </a>
+          ) : (
+            <div className="w-8" />
+          )}
         </header>
 
         <div className="flex-1 overflow-y-auto p-4 flex flex-col items-center justify-center">
-          <div className="relative w-full max-w-md bg-white rounded-xl shadow-2xl overflow-hidden border border-gray-700">
-            <img 
-              src={currentConfig.slipAsset} 
-              alt={currentConfig.title}
-              className="w-full h-auto object-contain block"
-            />
-          </div>
+          {completedSlipUrl ? (
+            <div className="w-full max-w-lg bg-white rounded-xl shadow-2xl overflow-hidden border border-gray-700">
+              <img
+                src={completedSlipUrl}
+                alt="Completed Slip"
+                className="w-full h-auto object-contain block"
+              />
+            </div>
+          ) : (
+            <div className="text-gray-400 text-xs">Loading slip...</div>
+          )}
 
-          <div className="mt-6 bg-gray-800 border border-gray-700 rounded-2xl p-4 w-full max-w-md text-left">
-            <h4 className="text-xs font-bold text-blue-400 uppercase tracking-wider mb-2">Verified Slip Details</h4>
+          <div className="mt-4 bg-gray-900 border border-gray-800 rounded-2xl p-4 w-full max-w-lg text-left">
             <div className="grid grid-cols-2 gap-2 text-xs">
               <div>
-                <span className="text-gray-400 block text-[10px]">Name:</span>
+                <span className="text-gray-400 block text-[10px]">Customer:</span>
                 <span className="font-bold text-white">{formData.name || formData.senderName}</span>
               </div>
               <div>
@@ -887,25 +1047,41 @@ export function BankFormModal({ type, onClose }: BankFormModalProps) {
           </div>
         </div>
 
-        <div className="p-4 bg-gray-900 border-t border-gray-800">
+        <div className="p-4 bg-gray-900 border-t border-gray-800 flex gap-3">
           <button
-            onClick={onClose}
-            className="w-full py-3.5 bg-[#004B87] hover:bg-blue-700 text-white font-bold rounded-full text-sm"
+            onClick={() => setViewMode(verificationId ? 'success' : 'review')}
+            className="flex-1 py-3.5 bg-gray-800 hover:bg-gray-700 text-white font-bold rounded-full text-sm"
           >
-            Done
+            Back
           </button>
+          {verificationId && (
+            <button
+              onClick={onClose}
+              className="flex-1 py-3.5 bg-[#004B87] hover:bg-blue-700 text-white font-bold rounded-full text-sm"
+            >
+              Finish
+            </button>
+          )}
         </div>
       </div>
     );
   };
 
-  // Main Wizard View
   return (
     <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-0 sm:p-4 animate-in fade-in duration-200">
       <div className="w-full max-w-md bg-white h-screen sm:h-[90vh] sm:rounded-3xl shadow-2xl flex flex-col overflow-hidden relative">
         {viewMode === 'review' && renderReviewScreen()}
-        {viewMode === 'success' && renderSuccessScreen()}
         {viewMode === 'view_completed_slip' && renderCompletedSlipView()}
+        {viewMode === 'success' && (
+          <SuccessAnimation
+            title={currentConfig.title}
+            formNumber={formNumber}
+            verificationId={verificationId}
+            amount={formData.amount}
+            onViewSlip={() => setViewMode('view_completed_slip')}
+            onDone={onClose}
+          />
+        )}
 
         {viewMode === 'wizard' && (
           <div className="flex flex-col h-full bg-[#F9FAFB]">
@@ -943,18 +1119,18 @@ export function BankFormModal({ type, onClose }: BankFormModalProps) {
             {/* Main Content Area */}
             <div className="flex-1 overflow-y-auto p-4 space-y-4 pb-28">
               
-              {/* Slip Visual Reference Card with Target Highlight */}
+              {/* Slip Visual Reference Card */}
               <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
                 <div className="p-2.5 bg-gray-50 border-b border-gray-200/80 flex items-center justify-between text-xs font-semibold text-gray-700">
                   <span className="flex items-center gap-1.5">
-                    <FileText size={14} className="text-[#004B87]" /> Official Blank Bank Slip
+                    <FileText size={14} className="text-[#004B87]" /> Official Bank Paper Slip
                   </span>
                   <button 
                     onClick={() => setIsSlipExpanded(!isSlipExpanded)}
                     className="text-[#004B87] hover:underline flex items-center gap-1 text-[11px] font-bold"
                   >
                     {isSlipExpanded ? <Minimize2 size={12} /> : <Maximize2 size={12} />}
-                    {isSlipExpanded ? 'Collapse' : 'Full Slip'}
+                    {isSlipExpanded ? 'Collapse' : 'Full View'}
                   </button>
                 </div>
 
@@ -977,36 +1153,35 @@ export function BankFormModal({ type, onClose }: BankFormModalProps) {
                       }}
                     >
                       <span className="bg-red-600 text-white text-[9px] font-bold px-1 rounded shadow-sm scale-90">
-                        Here
+                        Fill Here
                       </span>
                     </div>
                   )}
                 </div>
                 <div className="p-2 text-center text-[10px] text-gray-500 bg-white">
-                  📍 Red highlight shows where <strong>{currentStep.title}</strong> is located on the bank paper.
+                  📍 Red highlight shows where <strong>{currentStep.title}</strong> is placed on the paper slip.
                 </div>
               </div>
 
-              {/* RAAHA Guidance Box */}
+              {/* RAAHA Guidance Box (Part 34 & 35) */}
               <div className="bg-white border-2 border-blue-100 rounded-2xl p-4 shadow-sm relative overflow-hidden">
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center gap-2">
-                    <div className="w-6 h-6 rounded-full bg-[#004B87] text-white flex items-center justify-center font-bold text-[10px]">
+                    <div className="w-7 h-7 rounded-full bg-[#002D5A] text-white flex items-center justify-center font-bold text-xs shadow-sm">
                       R
                     </div>
                     <div>
-                      <span className="font-bold text-gray-900 text-xs">RAAHA Banking Guide</span>
-                      <span className="text-[10px] text-gray-500 block -mt-0.5">Your personal companion</span>
+                      <span className="font-bold text-gray-900 text-xs">RAAHA Banking Companion</span>
+                      <span className="text-[10px] text-gray-500 block -mt-0.5">Raah dikhane wala saathi</span>
                     </div>
                   </div>
 
                   <div className="flex items-center gap-1.5">
-                    {/* Language switcher between English and Hindi */}
                     <button
                       onClick={() => setRaahaLang(raahaLang === 'en' ? 'hi' : 'en')}
                       className="text-[10px] font-bold px-2 py-0.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-full transition-colors"
                     >
-                      {raahaLang === 'en' ? 'हिंदी में' : 'In English'}
+                      {raahaLang === 'en' ? 'हिंदी में' : 'English'}
                     </button>
 
                     <button
@@ -1023,12 +1198,12 @@ export function BankFormModal({ type, onClose }: BankFormModalProps) {
                   </div>
                 </div>
 
-                <p className="text-xs font-medium text-gray-700 leading-relaxed">
+                <p className="text-xs font-semibold text-gray-800 leading-relaxed bg-blue-50/40 p-2.5 rounded-xl border border-blue-100/50">
                   "{currentStep.raahaTip[raahaLang]}"
                 </p>
                 {isVoiceSpeaking && (
                   <span className="inline-block mt-2 text-[10px] font-bold text-blue-600 animate-pulse">
-                    🔊 RAAHA is reading guidance aloud...
+                    🔊 RAAHA bolkar samjha raha hai...
                   </span>
                 )}
               </div>
@@ -1036,13 +1211,22 @@ export function BankFormModal({ type, onClose }: BankFormModalProps) {
               {/* Active Step Input Card */}
               <div className="bg-white rounded-2xl border border-gray-200 p-4 shadow-sm space-y-3">
                 <div className="flex items-center justify-between">
-                  <label className="text-xs font-bold uppercase tracking-wider text-gray-500">
+                  <label className="text-xs font-bold uppercase tracking-wider text-gray-600">
                     {currentStep.label}
                   </label>
-                  <span className="text-[11px] text-gray-400 font-medium">Required</span>
+                  <span className={`text-[11px] font-bold ${currentStep.required ? 'text-red-500' : 'text-gray-400'}`}>
+                    {currentStep.required ? 'Required *' : 'Optional'}
+                  </span>
                 </div>
 
                 {renderStepInput()}
+
+                {stepError && (
+                  <div className="flex items-center gap-1.5 text-xs text-red-600 font-bold bg-red-50 p-2.5 rounded-xl border border-red-200">
+                    <AlertCircle size={15} className="shrink-0" />
+                    <span>{stepError}</span>
+                  </div>
+                )}
 
                 <p className="text-[11px] text-gray-400 leading-snug">
                   ℹ️ {currentStep.helper}
@@ -1051,7 +1235,7 @@ export function BankFormModal({ type, onClose }: BankFormModalProps) {
 
             </div>
 
-            {/* Sticky Bottom Actions */}
+            {/* Sticky Bottom Navigation */}
             <div className="p-4 bg-white border-t border-gray-100 absolute bottom-0 inset-x-0 z-20 flex gap-3">
               <button
                 type="button"

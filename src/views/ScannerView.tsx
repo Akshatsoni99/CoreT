@@ -4,7 +4,7 @@ import { CameraScanner } from './Scanner/CameraScanner';
 import { ProcessingScanner } from './Scanner/ProcessingScanner';
 import { AnalysisResults } from './Scanner/AnalysisResults';
 import { FormCompletion } from './Scanner/FormCompletion';
-import { OCRAnalysisResult, defaultUserProfile } from '../services/ocrService';
+import { OCRAnalysisResult } from '../services/ocrService';
 
 interface ScannerViewProps {
   onComplete: () => void;
@@ -68,7 +68,8 @@ export function ScannerView({ onComplete }: ScannerViewProps) {
         <ProcessingScanner 
           capturedImage={capturedImage} 
           onScanComplete={handleScanComplete} 
-          onBack={handleBack} 
+          onBack={handleBack}
+          onScanAgain={() => setStep(2)}
         />
       )}
 

@@ -1,4 +1,4 @@
-import { useState, KeyboardEvent } from 'react';
+import { useState, useEffect, KeyboardEvent } from 'react';
 import { 
   Search as SearchIcon, 
   Mic, 
@@ -16,10 +16,12 @@ import {
   User, 
   LogOut, 
   Lock, 
-  ExternalLink 
+  ExternalLink,
+  Landmark
 } from 'lucide-react';
 import AppLogo from '../assets/new-logo.png';
 import { usePopup } from '../context/PopupContext';
+import { getUserProfile, UserProfile } from '../services/userProfileStore';
 
 interface HomeViewProps {
   onNavigate: (tab: string, query?: string) => void;
@@ -27,6 +29,21 @@ interface HomeViewProps {
 
 export function HomeView({ onNavigate }: HomeViewProps) {
   const { showSuccess, showError, showInfo, showWarning } = usePopup();
+
+  const [profile, setProfile] = useState<UserProfile>(() => getUserProfile());
+
+  useEffect(() => {
+    const handleProfileChange = () => setProfile(getUserProfile());
+    window.addEventListener('coreserve_profile_updated', handleProfileChange);
+    return () => window.removeEventListener('coreserve_profile_updated', handleProfileChange);
+  }, []);
+
+  const getInitials = (name: string) => {
+    if (!name.trim()) return 'CP';
+    const parts = name.trim().split(/\s+/);
+    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  };
 
   const [searchQuery, setSearchQuery] = useState('');
   const [showNotifications, setShowNotifications] = useState(false);
@@ -149,9 +166,9 @@ export function HomeView({ onNavigate }: HomeViewProps) {
           <button 
             onClick={() => setShowAccountSheet(true)}
             title="Citizen Profile Account"
-            className="w-10 h-10 rounded-full bg-blue-100 hover:bg-blue-200 text-[#004B87] flex items-center justify-center font-bold text-sm border-2 border-blue-200 transition-all active:scale-95 shadow-sm focus:outline-none"
+            className="w-10 h-10 rounded-full bg-blue-100 hover:bg-blue-200 text-[#004B87] flex items-center justify-center font-black text-sm border-2 border-blue-200 transition-all active:scale-95 shadow-sm focus:outline-none"
           >
-            AS
+            {getInitials(profile.name)}
           </button>
         </div>
       </header>
@@ -162,7 +179,7 @@ export function HomeView({ onNavigate }: HomeViewProps) {
         <div className="mb-6 relative">
           <h2 className="text-gray-600 text-lg">Good morning,</h2>
           <h1 className="text-4xl font-extrabold text-[#002D5A] mb-2 flex items-center gap-2">
-            Aarav <span className="text-3xl">👋</span>
+            {profile.name ? profile.name.split(' ')[0] : 'Citizen'} <span className="text-3xl">👋</span>
           </h1>
           <p className="text-gray-600 max-w-[200px] text-sm mb-4 leading-snug">
             Simpler government services for a brighter tomorrow.
@@ -421,14 +438,16 @@ export function HomeView({ onNavigate }: HomeViewProps) {
             {/* Profile Info */}
             <div className="px-6 pb-6 pt-2 flex flex-col items-center text-center">
               <div className="w-20 h-20 rounded-full bg-blue-50 text-[#004B87] flex items-center justify-center font-extrabold text-2xl border-4 border-blue-100 shadow-md mb-3">
-                AS
+                {getInitials(profile.name)}
               </div>
-              <h3 className="text-xl font-bold text-gray-900">Aarav Sharma</h3>
-              <p className="text-xs text-gray-500 mt-0.5 font-mono">+91 98765 43210 • rohan.sharma@gmail.com</p>
+              <h3 className="text-xl font-bold text-gray-900">{profile.name || 'Citizen User'}</h3>
+              <p className="text-xs text-gray-500 mt-0.5 font-mono">
+                {profile.phone || 'No phone registered'} • {profile.email || 'No email registered'}
+              </p>
               
               <div className="mt-3 inline-flex items-center gap-1.5 bg-green-50 border border-green-200 text-green-700 px-3 py-1 rounded-full text-xs font-bold">
                 <CheckCheck size={14} />
-                <span>Aadhaar Verified Citizen</span>
+                <span>Verified Citizen Profile</span>
               </div>
             </div>
 
@@ -470,6 +489,26 @@ export function HomeView({ onNavigate }: HomeViewProps) {
                   </div>
                 </div>
                 <ChevronRight size={18} className="text-gray-400 group-hover:text-[#004B87]" />
+              </button>
+
+              {/* Dedicated Bank Staff Portal Link */}
+              <button 
+                onClick={() => {
+                  setShowAccountSheet(false);
+                  onNavigate('admin');
+                }}
+                className="w-full flex items-center justify-between p-3.5 bg-blue-50/80 hover:bg-blue-100/80 text-[#002D5A] rounded-2xl transition-all border border-blue-200 group"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-[#004B87] text-white flex items-center justify-center shadow-sm">
+                    <Landmark size={18} />
+                  </div>
+                  <div className="text-left">
+                    <p className="text-xs font-bold text-[#002D5A]">Bank Staff Portal (Admin)</p>
+                    <p className="text-[10px] text-blue-700">Verify slips, check verification IDs & transactions</p>
+                  </div>
+                </div>
+                <ChevronRight size={18} className="text-[#004B87] group-hover:translate-x-0.5 transition-transform" />
               </button>
 
               <button 

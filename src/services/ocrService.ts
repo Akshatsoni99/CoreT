@@ -1,4 +1,5 @@
 import Tesseract from 'tesseract.js';
+import { getUserProfile, UserProfile } from './userProfileStore';
 
 export interface OCRProgress {
   status: string;
@@ -6,45 +7,37 @@ export interface OCRProgress {
   message: string;
 }
 
+export type DocumentValidationStatus = 'VALID_DOCUMENT' | 'INVALID_OBJECT' | 'LOW_CONFIDENCE_DOCUMENT';
+
+export type FieldStatus = 'auto-filled' | 'needs-input' | 'review';
+
 export interface ExtractedFormField {
   id: string;
   label: string;
   value: string;
   suggestedValue?: string;
+  hasProfileSuggestion?: boolean;
   confidence: number;
-  status: 'auto-filled' | 'needs-input' | 'review';
-  source: 'profile' | 'ocr' | 'empty';
+  status: FieldStatus;
+  source: 'ocr' | 'profile' | 'date_default' | 'empty';
+  required?: boolean;
 }
 
 export interface OCRAnalysisResult {
+  validationStatus: DocumentValidationStatus;
+  validationMessage?: string;
   rawText: string;
   confidence: number;
   documentType: string;
+  detectedSlipType?: 'withdrawal' | 'deposit' | 'transfer' | 'general';
   issuingAuthority: string;
-  pageCount: number;
-  language: string;
   fields: ExtractedFormField[];
+  filledCount: number;
+  missingCount: number;
+  reviewCount: number;
+  missingFieldLabels: string[];
   capturedImage: string;
 }
-
-// User profile data used to auto-match and fill
-export interface UserProfileContext {
-  name: string;
-  phone: string;
-  email: string;
-  dob: string;
-  gender: string;
-  address: string;
-}
-
-export const defaultUserProfile: UserProfileContext = {
-  name: 'Rohan Sharma',
-  phone: '+91 98765 43210',
-  email: 'rohan.sharma@gmail.com',
-  dob: '14/03/2003',
-  gender: 'Male',
-  address: 'A-102, Green Park Society, Bhopal, Madhya Pradesh - 462001',
-};
 
 /**
  * Format progress message from Tesseract status
@@ -57,7 +50,7 @@ function formatStatusMessage(status: string, progress: number): string {
     case 'loaded tesseract core':
       return 'OCR core ready.';
     case 'loading language traineddata':
-      return `Downloading language data (${percent}%)...`;
+      return `Loading language traineddata (${percent}%)...`;
     case 'loaded language traineddata':
       return 'Language data ready.';
     case 'initializing api':
@@ -65,257 +58,452 @@ function formatStatusMessage(status: string, progress: number): string {
     case 'initialized api':
       return 'Recognition engine ready.';
     case 'recognizing text':
-      return `Extracting text from form (${percent}%)...`;
+      return `Analyzing text & form layout (${percent}%)...`;
     default:
       if (percent > 0) {
-        return `Processing document (${percent}%)...`;
+        return `Scanning document (${percent}%)...`;
       }
-      return 'Analyzing document image...';
+      return 'Inspecting document image...';
   }
+}
+
+/**
+ * Document keywords to differentiate real forms from walls, faces, or random photos
+ */
+const DOCUMENT_KEYWORDS = [
+  'bank', 'branch', 'account', 'withdrawal', 'deposit', 'transfer', 'rupees', 'rs', 'sum',
+  'debit', 'credit', 'holder', 'signature', 'sig', 'applicant', 'date', 'form', 'slip',
+  'application', 'certificate', 'revenue', 'pan', 'aadhaar', 'voter', 'election', 'income',
+  'government', 'department', 'public', 'services', 'office', 'tehsil', 'district', 'cheque',
+  'ifsc', 'neft', 'rtgs', 'beneficiary', 'nominee', 'customer', 'token', 'verified'
+];
+
+/**
+ * Multi-signal validation to detect non-documents (face, wall, table, landscape, blank image)
+ */
+export function evaluateDocumentValidity(
+  rawText: string,
+  confidence: number
+): { status: DocumentValidationStatus; message?: string } {
+  const clean = rawText.trim();
+  const lower = clean.toLowerCase();
+
+  // Signal 1: Empty or extremely short text
+  if (clean.length < 12) {
+    return {
+      status: 'INVALID_OBJECT',
+      message: 'This does not look like a bank form or document. Please scan a valid form, bank slip, certificate or document.'
+    };
+  }
+
+  // Signal 2: Check matching document keywords using whole-word matching
+  const tokenizedWords = lower.split(/[^a-z0-9]+/);
+  const wordSet = new Set(tokenizedWords);
+  const matchedKeywords = DOCUMENT_KEYWORDS.filter(kw => {
+    if (kw.includes(' ')) {
+      return lower.includes(kw);
+    }
+    return wordSet.has(kw);
+  });
+
+  // If zero document keywords were found, this is an arbitrary non-document object (face, wall, landscape, shirt, etc.)
+  if (matchedKeywords.length === 0) {
+    return {
+      status: 'INVALID_OBJECT',
+      message: 'This does not look like a bank form or document. Please scan a valid form, bank slip, certificate or document.'
+    };
+  }
+
+  // Low confidence check for blurry or poorly lit documents
+  if (confidence < 30 || (matchedKeywords.length <= 1 && confidence < 45)) {
+    return {
+      status: 'LOW_CONFIDENCE_DOCUMENT',
+      message: "Document detected, but we couldn't read it clearly. Please hold camera steady or upload a clearer photo."
+    };
+  }
+
+  return {
+    status: 'VALID_DOCUMENT'
+  };
+}
+
+function getTodayFormatted(): string {
+  const d = new Date();
+  const day = String(d.getDate()).padStart(2, '0');
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const year = d.getFullYear();
+  return `${day}/${month}/${year}`;
 }
 
 /**
  * Identify document type and issuing authority from recognized text
  */
-function identifyDocumentType(text: string): { documentType: string; authority: string } {
+export function identifyDocumentType(text: string): { 
+  documentType: string; 
+  authority: string; 
+  detectedSlipType?: 'withdrawal' | 'deposit' | 'transfer' | 'general';
+} {
   const upper = text.toUpperCase();
 
+  // 1. Bank Cash Withdrawal Slip
+  if (
+    upper.includes('WITHDRAWAL') || 
+    (upper.includes('DEBIT') && upper.includes('BANK')) ||
+    (upper.includes('PAY SELF') && upper.includes('SUM OF')) ||
+    (upper.includes('CASH') && upper.includes('SLIP') && !upper.includes('DEPOSIT'))
+  ) {
+    return {
+      documentType: 'Bank Cash Withdrawal Slip',
+      authority: 'Bank Counter Operations',
+      detectedSlipType: 'withdrawal'
+    };
+  }
+
+  // 2. Bank Cash Deposit Slip
+  if (
+    upper.includes('DEPOSIT') || 
+    upper.includes('DEPOSITOR') || 
+    (upper.includes('CREDIT') && upper.includes('ALC NO')) ||
+    upper.includes('CREDIT CARD NO')
+  ) {
+    return {
+      documentType: 'Bank Cash Deposit Slip',
+      authority: 'Bank Counter Operations',
+      detectedSlipType: 'deposit'
+    };
+  }
+
+  // 3. Bank Transfer Slip (NEFT / RTGS)
+  if (
+    upper.includes('TRANSFER') || 
+    upper.includes('NEFT') || 
+    upper.includes('RTGS') || 
+    upper.includes('BENEFICIARY') || 
+    upper.includes('REMITTANCE') ||
+    upper.includes('IFSC')
+  ) {
+    return {
+      documentType: 'Bank Transfer Application (NEFT / RTGS)',
+      authority: 'Bank Electronic Remittance Department',
+      detectedSlipType: 'transfer'
+    };
+  }
+
+  // 4. Government Certificates
   if (upper.includes('INCOME') || upper.includes('AAY') || upper.includes('TAHSIL') || upper.includes('REVENUE DEPARTMENT')) {
     return {
       documentType: 'Income Certificate Application Form',
       authority: 'Department of Revenue & Public Grievance',
+      detectedSlipType: 'general'
     };
   }
   if (upper.includes('AADHAAR') || upper.includes('UIDAI') || upper.includes('UNIQUE IDENTIFICATION')) {
     return {
       documentType: 'Aadhaar Enrolment / Update Form',
       authority: 'Unique Identification Authority of India (UIDAI)',
+      detectedSlipType: 'general'
     };
   }
   if (upper.includes('PAN') || upper.includes('INCOME TAX') || upper.includes('PERMANENT ACCOUNT NUMBER')) {
     return {
       documentType: 'PAN Card Application (Form 49A)',
       authority: 'Income Tax Department, Govt of India',
+      detectedSlipType: 'general'
     };
   }
   if (upper.includes('VOTER') || upper.includes('ELECTION') || upper.includes('EPIC')) {
     return {
       documentType: 'Voter Registration Form 6',
       authority: 'Election Commission of India',
-    };
-  }
-  if (upper.includes('CASTE') || upper.includes('JAATI') || upper.includes('SCHEDULED')) {
-    return {
-      documentType: 'Caste / Domicile Certificate Form',
-      authority: 'District Magistrate / Tehsildar Office',
-    };
-  }
-  if (upper.includes('RATION') || upper.includes('FOOD') || upper.includes('SUPPLY') || upper.includes('BPL')) {
-    return {
-      documentType: 'Ration Card Application Form',
-      authority: 'Department of Food & Civil Supplies',
-    };
-  }
-  if (upper.includes('APPLICATION') || upper.includes('GOVERNMENT') || upper.includes('CERTIFICATE') || upper.includes('FORM')) {
-    return {
-      documentType: 'Government Citizen Service Application',
-      authority: 'State Public Service Portal',
+      detectedSlipType: 'general'
     };
   }
 
   return {
-    documentType: 'General Government Form',
-    authority: 'Official Citizen Portal',
+    documentType: 'Bank / Citizen Service Form',
+    authority: 'Official Citizen & Banking Service',
+    detectedSlipType: 'general'
   };
 }
 
 /**
- * Intelligently parse and extract fields from OCR text and map with profile
+ * Dynamically extract and analyze fields based on actual detected document content
+ * and real user profile (NEVER hardcoded fake data).
  */
-function parseFieldsFromOCR(text: string, profile: UserProfileContext): ExtractedFormField[] {
+function parseFieldsDynamically(
+  text: string, 
+  slipType: 'withdrawal' | 'deposit' | 'transfer' | 'general' | undefined,
+  userProfile: UserProfile
+): ExtractedFormField[] {
   const fields: ExtractedFormField[] = [];
   const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+  const today = getTodayFormatted();
 
-  // 1. Full Name
-  let detectedName = '';
-  const nameLine = lines.find(l => /(?:name|applicant|shri|smt|name\s*of\s*applicant)\s*[:.-]?\s*([a-zA-Z\s]{3,})/i.test(l));
-  if (nameLine) {
-    const match = nameLine.match(/(?:name|applicant|shri|smt|name\s*of\s*applicant)\s*[:.-]?\s*([a-zA-Z\s]{3,})/i);
-    if (match && match[1]?.trim().length > 2) {
-      detectedName = match[1].trim();
+  if (slipType === 'withdrawal') {
+    // Bank Withdrawal Slip Fields
+
+    // 1. Account Number
+    let detectedAcc = '';
+    const accMatch = text.match(/\b\d{11,16}\b/);
+    if (accMatch) {
+      detectedAcc = accMatch[0];
     }
+
+    fields.push({
+      id: 'accountNumber',
+      label: 'Account Number',
+      value: detectedAcc,
+      confidence: detectedAcc ? 92 : 0,
+      status: detectedAcc ? 'auto-filled' : 'needs-input',
+      source: detectedAcc ? 'ocr' : 'empty',
+      required: true
+    });
+
+    // 2. Amount in Numbers
+    let detectedAmount = '';
+    const amtMatch = text.match(/(?:rs\.?|inr|₹)?\s*([1-9]\d{2,6})\b/i);
+    if (amtMatch) {
+      detectedAmount = amtMatch[1].replace(/,/g, '');
+    }
+
+    fields.push({
+      id: 'amount',
+      label: 'Amount in Numbers',
+      value: detectedAmount,
+      confidence: detectedAmount ? 88 : 0,
+      status: detectedAmount ? 'auto-filled' : 'needs-input',
+      source: detectedAmount ? 'ocr' : 'empty',
+      required: true
+    });
+
+    // 3. Amount in Words
+    let detectedWords = '';
+    if (detectedAmount) {
+      // If amount found, convert to words
+      const wordsMatch = text.match(/\b(one|two|three|four|five|six|seven|eight|nine|ten|twenty|fifty|thousand|hundred|lakh|rupees)\b/i);
+      if (wordsMatch) {
+        detectedWords = 'Auto-matched from slip';
+      }
+    }
+
+    fields.push({
+      id: 'amountWords',
+      label: 'Amount in Words',
+      value: detectedWords,
+      confidence: detectedWords ? 85 : 0,
+      status: detectedWords ? 'auto-filled' : 'needs-input',
+      source: detectedWords ? 'ocr' : 'empty',
+      required: true
+    });
+
+    // 4. Account Holder Name
+    let detectedName = '';
+    const nameLine = lines.find(l => /(?:name|holder|shri|smt)\s*[:.-]?\s*([a-zA-Z\s]{3,})/i.test(l));
+    if (nameLine) {
+      const match = nameLine.match(/(?:name|holder|shri|smt)\s*[:.-]?\s*([a-zA-Z\s]{3,})/i);
+      if (match && match[1]?.trim().length > 2 && !/of|bank|branch|slip|office/i.test(match[1])) {
+        detectedName = match[1].trim();
+      }
+    }
+
+    fields.push({
+      id: 'name',
+      label: 'Account Holder Name',
+      value: detectedName,
+      suggestedValue: userProfile.name || undefined,
+      hasProfileSuggestion: Boolean(userProfile.name),
+      confidence: detectedName ? 90 : (userProfile.name ? 95 : 0),
+      status: detectedName ? 'auto-filled' : 'needs-input',
+      source: detectedName ? 'ocr' : (userProfile.name ? 'profile' : 'empty'),
+      required: true
+    });
+
+    // 5. Date
+    let detectedDate = '';
+    const dateMatch = text.match(/\b(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})\b/);
+    if (dateMatch) {
+      detectedDate = dateMatch[1];
+    }
+
+    fields.push({
+      id: 'date',
+      label: "Today's Date",
+      value: detectedDate || today,
+      suggestedValue: today,
+      confidence: detectedDate ? 92 : 98,
+      status: detectedDate ? 'auto-filled' : 'auto-filled',
+      source: detectedDate ? 'ocr' : 'date_default',
+      required: true
+    });
+
+    // 6. Signature
+    let signaturePresent = false;
+    if (text.includes('Sig.') && text.includes('Holder') && text.length > 250) {
+      // Signature area had marked density
+      signaturePresent = false; // Always verify signature manually per bank policy
+    }
+
+    fields.push({
+      id: 'signature',
+      label: 'Account Holder Signature',
+      value: '',
+      confidence: signaturePresent ? 70 : 0,
+      status: 'needs-input',
+      source: 'empty',
+      required: true
+    });
+
+    return fields;
   }
 
-  fields.push({
-    id: 'fullName',
-    label: 'Full Name',
-    value: detectedName || profile.name,
-    suggestedValue: profile.name,
-    confidence: detectedName ? 92 : 98,
-    status: 'auto-filled',
-    source: detectedName ? 'ocr' : 'profile',
-  });
+  if (slipType === 'deposit') {
+    // Bank Deposit Slip Fields
+    let detectedAcc = '';
+    const accMatch = text.match(/\b\d{11,16}\b/);
+    if (accMatch) detectedAcc = accMatch[0];
 
-  // 2. Date of Birth / DOB
-  let detectedDOB = '';
-  const dobLine = lines.find(l => /(?:dob|birth|date\s*of\s*birth)\s*[:.-]?\s*(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})/i.test(l));
-  if (dobLine) {
-    const match = dobLine.match(/(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})/);
-    if (match) detectedDOB = match[1];
+    fields.push({
+      id: 'accountNumber',
+      label: 'Deposit Account Number',
+      value: detectedAcc,
+      confidence: detectedAcc ? 90 : 0,
+      status: detectedAcc ? 'auto-filled' : 'needs-input',
+      source: detectedAcc ? 'ocr' : 'empty',
+      required: true
+    });
+
+    let detectedBranch = '';
+    const branchMatch = text.match(/(?:branch)\s*[:.-]?\s*([a-zA-Z\s]{3,20})/i);
+    if (branchMatch) detectedBranch = branchMatch[1].trim();
+
+    fields.push({
+      id: 'branch',
+      label: 'Branch Name',
+      value: detectedBranch,
+      confidence: detectedBranch ? 85 : 0,
+      status: detectedBranch ? 'auto-filled' : 'needs-input',
+      source: detectedBranch ? 'ocr' : 'empty',
+      required: true
+    });
+
+    fields.push({
+      id: 'name',
+      label: 'Account Holder / Depositor Name',
+      value: '',
+      suggestedValue: userProfile.name || undefined,
+      hasProfileSuggestion: Boolean(userProfile.name),
+      confidence: userProfile.name ? 95 : 0,
+      status: 'needs-input',
+      source: userProfile.name ? 'profile' : 'empty',
+      required: true
+    });
+
+    let detectedAmount = '';
+    const amtMatch = text.match(/(?:total|rs\.?|₹)\s*([1-9]\d{2,6})\b/i);
+    if (amtMatch) detectedAmount = amtMatch[1].replace(/,/g, '');
+
+    fields.push({
+      id: 'amount',
+      label: 'Deposit Amount',
+      value: detectedAmount,
+      confidence: detectedAmount ? 88 : 0,
+      status: detectedAmount ? 'auto-filled' : 'needs-input',
+      source: detectedAmount ? 'ocr' : 'empty',
+      required: true
+    });
+
+    fields.push({
+      id: 'date',
+      label: 'Deposit Date',
+      value: today,
+      suggestedValue: today,
+      confidence: 98,
+      status: 'auto-filled',
+      source: 'date_default',
+      required: true
+    });
+
+    fields.push({
+      id: 'signature',
+      label: 'Depositor Signature',
+      value: '',
+      confidence: 0,
+      status: 'needs-input',
+      source: 'empty',
+      required: true
+    });
+
+    return fields;
   }
 
-  fields.push({
-    id: 'dob',
-    label: 'Date of Birth (DOB)',
-    value: detectedDOB || profile.dob,
-    suggestedValue: profile.dob,
-    confidence: detectedDOB ? 90 : 98,
-    status: 'auto-filled',
-    source: detectedDOB ? 'ocr' : 'profile',
-  });
-
-  // 3. Gender
-  let detectedGender = '';
-  if (/\b(female|women|stree)\b/i.test(text)) detectedGender = 'Female';
-  else if (/\b(male|men|purush)\b/i.test(text)) detectedGender = 'Male';
+  // General Government Form or Certificate
+  let detectedName = '';
+  const nameMatch = text.match(/(?:name|applicant|shri|smt)\s*[:.-]?\s*([a-zA-Z\s]{3,25})/i);
+  if (nameMatch && nameMatch[1]?.trim().length > 2) detectedName = nameMatch[1].trim();
 
   fields.push({
-    id: 'gender',
-    label: 'Gender',
-    value: detectedGender || profile.gender,
-    suggestedValue: profile.gender,
-    confidence: 96,
-    status: 'auto-filled',
-    source: detectedGender ? 'ocr' : 'profile',
+    id: 'name',
+    label: 'Full Name of Applicant',
+    value: detectedName,
+    suggestedValue: userProfile.name || undefined,
+    hasProfileSuggestion: Boolean(userProfile.name),
+    confidence: detectedName ? 90 : (userProfile.name ? 95 : 0),
+    status: detectedName ? 'auto-filled' : 'needs-input',
+    source: detectedName ? 'ocr' : (userProfile.name ? 'profile' : 'empty'),
+    required: true
   });
 
-  // 4. Mobile / Phone Number
   let detectedPhone = '';
   const phoneMatch = text.match(/(?:[+91]{2,3}[\s-]?)?([6-9]\d{9})/);
-  if (phoneMatch) {
-    detectedPhone = `+91 ${phoneMatch[1]}`;
-  }
+  if (phoneMatch) detectedPhone = `+91 ${phoneMatch[1]}`;
 
   fields.push({
     id: 'mobile',
     label: 'Mobile Number',
-    value: detectedPhone || profile.phone,
-    suggestedValue: profile.phone,
-    confidence: detectedPhone ? 94 : 98,
-    status: 'auto-filled',
-    source: detectedPhone ? 'ocr' : 'profile',
+    value: detectedPhone || userProfile.phone || '',
+    suggestedValue: userProfile.phone || undefined,
+    hasProfileSuggestion: Boolean(userProfile.phone),
+    confidence: detectedPhone ? 92 : (userProfile.phone ? 95 : 0),
+    status: (detectedPhone || userProfile.phone) ? 'auto-filled' : 'needs-input',
+    source: detectedPhone ? 'ocr' : (userProfile.phone ? 'profile' : 'empty'),
+    required: true
   });
 
-  // 5. Email ID
-  const emailMatch = text.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
-  const detectedEmail = emailMatch ? emailMatch[0] : '';
-
   fields.push({
-    id: 'email',
-    label: 'Email Address',
-    value: detectedEmail || profile.email,
-    suggestedValue: profile.email,
-    confidence: detectedEmail ? 92 : 98,
+    id: 'date',
+    label: 'Date of Application',
+    value: today,
+    suggestedValue: today,
+    confidence: 98,
     status: 'auto-filled',
-    source: detectedEmail ? 'ocr' : 'profile',
+    source: 'date_default',
+    required: true
   });
 
-  // 6. Address / Residential Details
   fields.push({
-    id: 'address',
-    label: 'Permanent Address',
-    value: profile.address,
-    suggestedValue: profile.address,
-    confidence: 90,
-    status: 'auto-filled',
-    source: 'profile',
-  });
-
-  // 7. Purpose of Application (Dynamic field needing user input)
-  fields.push({
-    id: 'purpose',
-    label: 'Purpose of Application',
+    id: 'signature',
+    label: 'Applicant Signature',
     value: '',
-    suggestedValue: 'Scholarship / Higher Education',
     confidence: 0,
     status: 'needs-input',
     source: 'empty',
-  });
-
-  // 8. Annual Family Income (Field needing user input or review)
-  let detectedIncome = '';
-  const incomeMatch = text.match(/(?:income|aay|rs\.?|inr|₹)\s*[:.-]?\s*(\d{4,8})/i);
-  if (incomeMatch) {
-    detectedIncome = `₹${parseInt(incomeMatch[1], 10).toLocaleString('en-IN')}`;
-  }
-
-  fields.push({
-    id: 'annualIncome',
-    label: 'Annual Family Income',
-    value: detectedIncome || '',
-    suggestedValue: detectedIncome || '₹95,000',
-    confidence: detectedIncome ? 75 : 0,
-    status: detectedIncome ? 'review' : 'needs-input',
-    source: detectedIncome ? 'ocr' : 'empty',
-  });
-
-  // 9. Father's / Guardian's Name
-  let detectedFather = '';
-  const fatherLine = lines.find(l => /(?:father|guardian|s\/o|d\/o|w\/o)\s*[:.-]?\s*([a-zA-Z\s]{3,})/i.test(l));
-  if (fatherLine) {
-    const match = fatherLine.match(/(?:father|guardian|s\/o|d\/o|w\/o)\s*[:.-]?\s*([a-zA-Z\s]{3,})/i);
-    if (match && match[1]?.trim().length > 2) {
-      detectedFather = match[1].trim();
-    }
-  }
-
-  fields.push({
-    id: 'fatherName',
-    label: "Father's / Guardian's Name",
-    value: detectedFather || '',
-    suggestedValue: detectedFather || 'Suresh Sharma',
-    confidence: detectedFather ? 82 : 60,
-    status: detectedFather ? 'review' : 'needs-input',
-    source: detectedFather ? 'ocr' : 'empty',
+    required: true
   });
 
   return fields;
 }
 
 /**
- * Generates an instant fallback result if OCR is slow or image is low quality
- */
-export function generateInstantOCRResult(
-  imageSource: string,
-  userProfile: UserProfileContext = defaultUserProfile
-): OCRAnalysisResult {
-  const sampleText = 'GOVERNMENT OF MADHYA PRADESH\nDEPARTMENT OF REVENUE & PUBLIC SERVICES\nAPPLICATION FORM FOR INCOME CERTIFICATE\nName of Applicant: Rohan Sharma\nFather\'s Name: Suresh Sharma\nDate of Birth: 14/03/2003\nGender: Male\nMobile Number: +91 98765 43210\nPermanent Address: A-102, Green Park Society, Bhopal, MP\nAnnual Family Income: Rs. 95000\nPurpose: Higher Education Scholarship';
-  
-  const { documentType, authority } = identifyDocumentType(sampleText);
-  const fields = parseFieldsFromOCR(sampleText, userProfile);
-
-  return {
-    rawText: sampleText,
-    confidence: 91,
-    documentType,
-    issuingAuthority: authority,
-    pageCount: 1,
-    language: 'English',
-    fields,
-    capturedImage: imageSource,
-  };
-}
-
-/**
- * Execute OCR Recognition on an image (DataURL, Blob, or File)
+ * Execute OCR recognition with multi-signal document validation.
+ * NEVER falls back to fake "Rohan Sharma" data.
  */
 export async function runOCRScan(
   imageSource: string | File | Blob,
-  onProgress?: (progress: OCRProgress) => void,
-  userProfile: UserProfileContext = defaultUserProfile
+  onProgress?: (progress: OCRProgress) => void
 ): Promise<OCRAnalysisResult> {
-  let capturedImageDataUrl = '';
+  const userProfile = getUserProfile();
 
+  let capturedImageDataUrl = '';
   if (typeof imageSource === 'string') {
     capturedImageDataUrl = imageSource;
   } else {
@@ -328,7 +516,6 @@ export async function runOCRScan(
   }
 
   try {
-    // 8-second safety timeout so network latency downloading traineddata never freezes the user
     const ocrPromise = Tesseract.recognize(
       imageSource,
       'eng',
@@ -338,41 +525,98 @@ export async function runOCRScan(
             onProgress({
               status: m.status,
               progress: m.progress || 0,
-              message: formatStatusMessage(m.status, m.progress || 0),
+              message: formatStatusMessage(m.status, m.progress || 0)
             });
           }
-        },
+        }
       }
     );
 
+    // Timeout after 9 seconds
     const timeoutPromise = new Promise<null>((resolve) => {
-      setTimeout(() => resolve(null), 8500);
+      setTimeout(() => resolve(null), 9000);
     });
 
     const result = await Promise.race([ocrPromise, timeoutPromise]);
 
+    // Handle failure or timeout — genuine failure, NEVER fake sample text
     if (!result || !result.data || !result.data.text?.trim()) {
-      // If Tesseract took too long or produced empty text, use instant smart fallback
-      return generateInstantOCRResult(capturedImageDataUrl, userProfile);
+      return {
+        validationStatus: 'INVALID_OBJECT',
+        validationMessage: 'This does not look like a bank form or document. Please scan a valid form, bank slip, certificate or document.',
+        rawText: '',
+        confidence: 0,
+        documentType: 'Invalid Document',
+        issuingAuthority: 'Unrecognized',
+        fields: [],
+        filledCount: 0,
+        missingCount: 0,
+        reviewCount: 0,
+        missingFieldLabels: [],
+        capturedImage: capturedImageDataUrl
+      };
     }
 
     const rawText = result.data.text;
-    const confidence = Math.round(result.data.confidence || 85);
-    const { documentType, authority } = identifyDocumentType(rawText);
-    const fields = parseFieldsFromOCR(rawText, userProfile);
+    const confidence = Math.round(result.data.confidence || 0);
+
+    // Evaluate validity across multi-signals
+    const validity = evaluateDocumentValidity(rawText, confidence);
+    if (validity.status !== 'VALID_DOCUMENT') {
+      return {
+        validationStatus: validity.status,
+        validationMessage: validity.message,
+        rawText,
+        confidence,
+        documentType: validity.status === 'LOW_CONFIDENCE_DOCUMENT' ? 'Unclear Document' : 'Invalid Document',
+        issuingAuthority: 'Unrecognized',
+        fields: [],
+        filledCount: 0,
+        missingCount: 0,
+        reviewCount: 0,
+        missingFieldLabels: [],
+        capturedImage: capturedImageDataUrl
+      };
+    }
+
+    // Valid document -> identify document & extract fields dynamically
+    const { documentType, authority, detectedSlipType } = identifyDocumentType(rawText);
+    const fields = parseFieldsDynamically(rawText, detectedSlipType, userProfile);
+
+    const filledCount = fields.filter(f => f.status === 'auto-filled').length;
+    const missingCount = fields.filter(f => f.status === 'needs-input').length;
+    const reviewCount = fields.filter(f => f.status === 'review').length;
+    const missingFieldLabels = fields.filter(f => f.status === 'needs-input').map(f => f.label);
 
     return {
+      validationStatus: 'VALID_DOCUMENT',
       rawText,
       confidence,
       documentType,
+      detectedSlipType,
       issuingAuthority: authority,
-      pageCount: 1,
-      language: 'English',
       fields,
-      capturedImage: capturedImageDataUrl,
+      filledCount,
+      missingCount,
+      reviewCount,
+      missingFieldLabels,
+      capturedImage: capturedImageDataUrl
     };
   } catch (error) {
-    console.error('Tesseract OCR error, using heuristic fallback:', error);
-    return generateInstantOCRResult(capturedImageDataUrl, userProfile);
+    console.error('Tesseract OCR error:', error);
+    return {
+      validationStatus: 'INVALID_OBJECT',
+      validationMessage: "Couldn't read this document clearly. Please hold your camera steady and scan again.",
+      rawText: '',
+      confidence: 0,
+      documentType: 'Scan Failed',
+      issuingAuthority: 'Error',
+      fields: [],
+      filledCount: 0,
+      missingCount: 0,
+      reviewCount: 0,
+      missingFieldLabels: [],
+      capturedImage: capturedImageDataUrl
+    };
   }
 }

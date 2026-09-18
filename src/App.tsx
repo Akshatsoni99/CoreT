@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Layout } from './components/Layout';
 import { HomeView } from './views/HomeView';
 import { ScannerView } from './views/ScannerView';
@@ -12,18 +12,55 @@ import { ScamShieldView } from './views/ScamShieldView';
 import { ProfileView } from './views/ProfileView';
 import { AskAIView } from './views/AskAIView';
 import { AuthView } from './views/AuthView';
+import { AdminView } from './views/AdminView';
 
 export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [activeTab, setActiveTab] = useState('home');
+  const [activeTab, setActiveTab] = useState(() => {
+    if (typeof window !== 'undefined' && window.location.hash.toLowerCase().includes('admin')) {
+      return 'admin';
+    }
+    return 'home';
+  });
   const [aiInitialQuery, setAiInitialQuery] = useState('');
+
+  useEffect(() => {
+    const handleHashChange = () => {
+      const hash = window.location.hash.toLowerCase();
+      if (hash.includes('admin')) {
+        setActiveTab('admin');
+      } else if (hash === '' || hash === '#/' || hash === '#home') {
+        setActiveTab('home');
+      }
+    };
+
+    window.addEventListener('hashchange', handleHashChange);
+    return () => window.removeEventListener('hashchange', handleHashChange);
+  }, []);
 
   const handleNavigate = (tab: string, query?: string) => {
     if (query) {
       setAiInitialQuery(query);
     }
+    if (tab === 'admin') {
+      window.location.hash = 'admin';
+    } else if (window.location.hash.toLowerCase().includes('admin')) {
+      window.location.hash = '';
+    }
     setActiveTab(tab);
   };
+
+  // Dedicated Bank Admin Portal view (Desktop / Branch Terminal experience)
+  if (activeTab === 'admin') {
+    return (
+      <AdminView
+        onBackToCitizen={() => {
+          window.location.hash = '';
+          setActiveTab('home');
+        }}
+      />
+    );
+  }
 
   if (!isAuthenticated) {
     return (
@@ -36,13 +73,13 @@ export default function App() {
   }
 
   return (
-    <Layout activeTab={activeTab} onTabChange={setActiveTab}>
+    <Layout activeTab={activeTab} onTabChange={handleNavigate}>
       {activeTab === 'home' && <HomeView onNavigate={handleNavigate} />}
-      {activeTab === 'scanner' && <ScannerView onComplete={() => setActiveTab('home')} />}
+      {activeTab === 'scanner' && <ScannerView onComplete={() => handleNavigate('home')} />}
       {activeTab === 'services' && <ServicesView />}
       {activeTab === 'scam-shield' && <ScamShieldView />}
       {activeTab === 'profile' && <ProfileView onLogout={() => setIsAuthenticated(false)} />}
-      {activeTab === 'ask-ai' && <AskAIView onNavigate={setActiveTab} initialQuery={aiInitialQuery} />}
+      {activeTab === 'ask-ai' && <AskAIView onNavigate={handleNavigate} initialQuery={aiInitialQuery} />}
     </Layout>
   );
 }

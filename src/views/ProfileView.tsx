@@ -1,58 +1,85 @@
-import { useState } from 'react';
-import { Settings, FileText, Shield, Bell, HelpCircle, LogOut, ChevronRight, ChevronLeft, Save } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Settings, FileText, Shield, Bell, HelpCircle, LogOut, ChevronRight, ChevronLeft, Save, UserCheck, AlertCircle } from 'lucide-react';
 import AppLogo from '../assets/new-logo.png';
 import { isGeminiConfigured, getGeminiApiKey } from '../services/geminiService';
+import { getUserProfile, setUserProfile, UserProfile } from '../services/userProfileStore';
 
 type ProfileViewState = 'main' | 'edit' | 'vault' | 'privacy' | 'settings' | 'support';
 
 export function ProfileView({ onLogout }: { onLogout?: () => void }) {
   const [currentView, setCurrentView] = useState<ProfileViewState>('main');
-  const [profileData, setProfileData] = useState({
-    name: 'Rohan Sharma',
-    phone: '+91 98765 43210',
-    email: 'rohan.sharma@gmail.com',
-    dob: '2003-03-14',
-    address: 'A-102, Green Park Society, Bhopal, MP',
-    gender: 'Male'
-  });
+  const [profileData, setProfileData] = useState<UserProfile>(() => getUserProfile());
+  const [savedSuccess, setSavedSuccess] = useState(false);
+
+  useEffect(() => {
+    const handleUpdate = () => {
+      setProfileData(getUserProfile());
+    };
+    window.addEventListener('coreserve_profile_updated', handleUpdate);
+    return () => window.removeEventListener('coreserve_profile_updated', handleUpdate);
+  }, []);
+
+  const handleSaveProfile = () => {
+    setUserProfile(profileData);
+    setSavedSuccess(true);
+    setTimeout(() => {
+      setSavedSuccess(false);
+      setCurrentView('main');
+    }, 600);
+  };
 
   const menuItems = [
     { id: 'vault', icon: FileText, title: 'Saved Information Vault', desc: 'Manage your details and documents' },
     { id: 'privacy', icon: Shield, title: 'Privacy & Security', desc: 'Control your data and permissions' },
-    { id: 'settings', icon: Bell, title: 'App Settings', desc: 'Notifications, language and more' },
-    { id: 'support', icon: HelpCircle, title: 'Help & Support', desc: 'Get help or contact us' },
+    { id: 'settings', icon: Bell, title: 'App Settings', desc: 'Notifications, language and AI keys' },
+    { id: 'support', icon: HelpCircle, title: 'Help & Support', desc: 'Get help or contact support' },
   ];
+
+  const getInitials = (name: string) => {
+    if (!name.trim()) return 'CP';
+    const parts = name.trim().split(/\s+/);
+    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  };
 
   const renderMainView = () => (
     <div className="flex flex-col h-full bg-[#F9FAFB]">
       <header className="flex justify-between items-center px-6 pt-12 pb-4 bg-white">
         <img src={AppLogo} alt="CoreT" className="h-6 object-contain" />
-        <button className="text-gray-700 hover:bg-gray-100 p-2 rounded-full transition-colors">
-          <Settings size={24} />
+        <button 
+          onClick={() => setCurrentView('settings')}
+          className="text-gray-700 hover:bg-gray-100 p-2 rounded-full transition-colors"
+          title="App Settings"
+        >
+          <Settings size={22} />
         </button>
       </header>
 
       <div className="flex-1 overflow-y-auto pb-24">
         <div className="bg-white px-6 pb-6 pt-2 rounded-b-3xl shadow-[0_4px_20px_-10px_rgba(0,0,0,0.05)] mb-6">
           <div className="flex items-center gap-4 mb-6">
-            <div className="w-16 h-16 rounded-full bg-blue-50 text-[#004B87] flex items-center justify-center font-bold text-2xl border border-blue-100 shadow-sm shrink-0">
-              {profileData.name.split(' ').map(n => n[0]).join('')}
+            <div className="w-16 h-16 rounded-full bg-blue-50 text-[#004B87] flex items-center justify-center font-black text-xl border-2 border-blue-100 shadow-sm shrink-0">
+              {getInitials(profileData.name)}
             </div>
-            <div className="flex-1">
-              <h2 className="text-xl font-bold text-gray-900 mb-1">{profileData.name}</h2>
-              <p className="text-sm text-gray-500 mb-0.5">{profileData.phone}</p>
-              <p className="text-sm text-gray-500">{profileData.email}</p>
+            <div className="flex-1 min-w-0">
+              <h2 className="text-xl font-black text-gray-900 mb-0.5 truncate">
+                {profileData.name || 'Citizen User'}
+              </h2>
+              <p className="text-xs text-gray-500 mb-0.5 truncate font-mono">
+                {profileData.phone || 'No phone added'}
+              </p>
+              <p className="text-xs text-gray-500 truncate">
+                {profileData.email || 'No email registered'}
+              </p>
             </div>
           </div>
           <button 
             onClick={() => setCurrentView('edit')}
             className="w-full border border-gray-200 text-[#004B87] font-bold rounded-full py-2.5 text-sm hover:bg-blue-50 hover:border-blue-200 transition-colors"
           >
-            Edit Profile
+            {profileData.name ? 'Edit Profile' : 'Complete Your Profile'}
           </button>
         </div>
-
-        {/* Note: The 80% completion banner has been removed as requested */}
 
         <div className="px-4 space-y-3">
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden divide-y divide-gray-100">
@@ -94,16 +121,39 @@ export function ProfileView({ onLogout }: { onLogout?: () => void }) {
         <button onClick={() => setCurrentView('main')} className="p-2 -ml-2 text-gray-900">
           <ChevronLeft size={24} />
         </button>
-        <h1 className="text-xl font-bold text-gray-900 ml-2">Edit Profile</h1>
+        <h1 className="text-xl font-bold text-gray-900 ml-2">Edit Citizen Profile</h1>
       </header>
 
-      <div className="flex-1 overflow-y-auto p-6 pb-24 space-y-6">
+      <div className="flex-1 overflow-y-auto p-6 pb-28 space-y-5">
         <div className="space-y-1.5">
           <label className="text-sm font-bold text-gray-900 ml-1">Full Name</label>
           <input 
             type="text" 
+            placeholder="Enter your full legal name"
             value={profileData.name}
-            onChange={e => setProfileData({...profileData, name: e.target.value})}
+            onChange={e => setProfileData({ ...profileData, name: e.target.value })}
+            className="w-full border border-gray-300 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#004B87] focus:ring-1 focus:ring-[#004B87]"
+          />
+        </div>
+
+        <div className="space-y-1.5">
+          <label className="text-sm font-bold text-gray-900 ml-1">Mobile Number</label>
+          <input 
+            type="text" 
+            placeholder="e.g. +91 98765 00000"
+            value={profileData.phone}
+            onChange={e => setProfileData({ ...profileData, phone: e.target.value })}
+            className="w-full border border-gray-300 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#004B87] focus:ring-1 focus:ring-[#004B87]"
+          />
+        </div>
+
+        <div className="space-y-1.5">
+          <label className="text-sm font-bold text-gray-900 ml-1">Email Address</label>
+          <input 
+            type="email" 
+            placeholder="name@example.com"
+            value={profileData.email}
+            onChange={e => setProfileData({ ...profileData, email: e.target.value })}
             className="w-full border border-gray-300 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#004B87] focus:ring-1 focus:ring-[#004B87]"
           />
         </div>
@@ -113,7 +163,7 @@ export function ProfileView({ onLogout }: { onLogout?: () => void }) {
           <input 
             type="date" 
             value={profileData.dob}
-            onChange={e => setProfileData({...profileData, dob: e.target.value})}
+            onChange={e => setProfileData({ ...profileData, dob: e.target.value })}
             className="w-full border border-gray-300 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#004B87] focus:ring-1 focus:ring-[#004B87]"
           />
         </div>
@@ -121,10 +171,11 @@ export function ProfileView({ onLogout }: { onLogout?: () => void }) {
         <div className="space-y-1.5">
           <label className="text-sm font-bold text-gray-900 ml-1">Gender</label>
           <select 
-            value={profileData.gender}
-            onChange={e => setProfileData({...profileData, gender: e.target.value})}
+            value={profileData.gender || 'Select Gender'}
+            onChange={e => setProfileData({ ...profileData, gender: e.target.value })}
             className="w-full border border-gray-300 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#004B87] focus:ring-1 focus:ring-[#004B87] bg-white"
           >
+            <option value="">Select Gender</option>
             <option value="Male">Male</option>
             <option value="Female">Female</option>
             <option value="Other">Other</option>
@@ -132,19 +183,26 @@ export function ProfileView({ onLogout }: { onLogout?: () => void }) {
         </div>
 
         <div className="space-y-1.5">
-          <label className="text-sm font-bold text-gray-900 ml-1">Address</label>
+          <label className="text-sm font-bold text-gray-900 ml-1">Permanent Residential Address</label>
           <textarea 
             value={profileData.address}
-            onChange={e => setProfileData({...profileData, address: e.target.value})}
+            placeholder="Enter your address"
+            onChange={e => setProfileData({ ...profileData, address: e.target.value })}
             rows={3}
             className="w-full border border-gray-300 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#004B87] focus:ring-1 focus:ring-[#004B87] resize-none"
           />
         </div>
+
+        {savedSuccess && (
+          <div className="p-3 bg-emerald-50 text-emerald-800 rounded-xl border border-emerald-200 text-xs font-bold text-center">
+            Profile updated successfully!
+          </div>
+        )}
       </div>
 
       <div className="p-4 bg-white border-t border-gray-100 absolute bottom-0 inset-x-0 z-20 pb-8">
         <button 
-          onClick={() => setCurrentView('main')}
+          onClick={handleSaveProfile}
           className="w-full bg-[#004B87] hover:bg-blue-800 text-white rounded-full py-4 font-bold flex items-center justify-center gap-2 transition-colors shadow-lg shadow-[#004B87]/30"
         >
           <Save size={20} /> Save Changes
@@ -177,7 +235,7 @@ export function ProfileView({ onLogout }: { onLogout?: () => void }) {
                 </div>
                 <div>
                   <h3 className="font-bold text-gray-900 text-sm">Gemini AI Assistant (RAAHA)</h3>
-                  <p className="text-[11px] text-gray-500">Powered by Google Gemini 3.6 Flash</p>
+                  <p className="text-[11px] text-gray-500">Multilingual Banking & Citizen Companion</p>
                 </div>
               </div>
               <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full ${
@@ -199,7 +257,7 @@ export function ProfileView({ onLogout }: { onLogout?: () => void }) {
             </div>
 
             <div className="text-[11px] text-gray-500 leading-relaxed">
-              Your Gemini API Key is loaded automatically from your <code className="bg-gray-100 px-1 py-0.5 rounded text-gray-700 font-mono">.env</code> file. RAAHA AI uses it for real-time banking guidance, form filling help, speech recognition, and document analysis.
+              Your Gemini API Key is loaded automatically from your environment. RAAHA AI uses it for real-time banking guidance, form filling help, speech recognition, and document analysis.
             </div>
           </div>
 
@@ -216,7 +274,7 @@ export function ProfileView({ onLogout }: { onLogout?: () => void }) {
                 <span className="font-bold text-green-600">7 Languages</span>
               </div>
               <div className="flex justify-between items-center py-1">
-                <span>Multimodal Form Slip Vision</span>
+                <span>On-Device Physical Slip Vision</span>
                 <span className="font-bold text-green-600">Active</span>
               </div>
             </div>
@@ -241,8 +299,8 @@ export function ProfileView({ onLogout }: { onLogout?: () => void }) {
             <Icon size={32} />
           </div>
           <div>
-            <h2 className="text-lg font-bold text-gray-900 mb-2">{title} Configuration</h2>
-            <p className="text-sm">This screen is currently under construction. All {title.toLowerCase()} related features will be available here soon.</p>
+            <h2 className="text-lg font-bold text-gray-900 mb-2">{title}</h2>
+            <p className="text-sm">Manage your documents and security preferences.</p>
           </div>
         </div>
       </div>

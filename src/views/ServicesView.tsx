@@ -75,7 +75,7 @@ const categoriesData: CategoryItem[] = [
     bg: 'bg-emerald-50', 
     services: [
       { 
-        name: 'Withdrawal', 
+        name: 'Cash Withdrawal', 
         desc: 'Fill a cash withdrawal slip', 
         icon: ArrowDownLeft,
         slipType: 'withdrawal',
@@ -83,7 +83,7 @@ const categoriesData: CategoryItem[] = [
         url: '#' 
       },
       { 
-        name: 'Deposit', 
+        name: 'Cash Deposit', 
         desc: 'Fill a cash deposit slip', 
         icon: ArrowUpRight,
         slipType: 'deposit',

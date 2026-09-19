@@ -15,7 +15,8 @@ import {
   Maximize2,
   Minimize2,
   Download,
-  AlertCircle
+  AlertCircle,
+  Loader2
 } from 'lucide-react';
 
 import WithdrawalSlipImg from '../../assets/withdrawal-slip.png';
@@ -29,13 +30,21 @@ import { generateCompletedSlip } from '../../utils/slipRenderer';
 import { AccountNumberBoxes } from './AccountNumberBoxes';
 import { SignaturePad } from './SignaturePad';
 import { SuccessAnimation } from './SuccessAnimation';
+import { RequestSource, BankServiceRequest } from '../../../server/types';
+import { submitBankServiceRequest } from '../../services/apiService';
 
 export type BankServiceType = 'withdrawal' | 'deposit' | 'transfer';
 
-interface BankFormModalProps {
+export interface BankFormModalProps {
   type: BankServiceType;
+  source?: RequestSource;
   onClose: () => void;
   initialData?: Record<string, string>;
+  ocrMetadata?: {
+    OCRData?: any;
+    ocrDetectedFields?: Record<string, string>;
+    uploadedDocument?: string;
+  };
 }
 
 // Convert numbers to Indian English Words
@@ -87,7 +96,7 @@ function getTodayFormatted(): string {
   return `${day}/${month}/${year}`;
 }
 
-export function BankFormModal({ type, onClose, initialData }: BankFormModalProps) {
+export function BankFormModal({ type, source, onClose, initialData, ocrMetadata }: BankFormModalProps) {
   const profile = getUserProfile();
 
   // Form Configurations — Asking strictly only required fields per service
@@ -467,6 +476,7 @@ export function BankFormModal({ type, onClose, initialData }: BankFormModalProps
   const [raahaLang, setRaahaLang] = useState<'en' | 'hi'>('hi');
   const [isVoiceSpeaking, setIsVoiceSpeaking] = useState(false);
   const [stepError, setStepError] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Form State: Initialize cleanly from profile if available, otherwise empty (NEVER fake Rohan Sharma)
   const [formData, setFormData] = useState<Record<string, string>>(() => {
@@ -623,49 +633,80 @@ export function BankFormModal({ type, onClose, initialData }: BankFormModalProps
 
   // Handle final submission (DONE — DETAILS ARE CORRECT)
   const handleFinalSubmit = async () => {
-    // 1. Generate Unique Verification ID ONCE
-    const uniqueId = generateVerificationId(currentConfig.prefix);
-    const fNum = generateFormNumber(currentConfig.prefix);
-    setVerificationId(uniqueId);
-    setFormNumber(fNum);
+    if (isSubmitting) return;
+    setIsSubmitting(true);
 
-    // 2. Render completed slip with the unique Verification ID stamped
-    let finalSlipDataUrl = completedSlipUrl;
     try {
-      finalSlipDataUrl = await generateCompletedSlip({
-        type,
-        data: formData,
-        signatureDataUrl: formData.signature,
-        verificationId: uniqueId
-      });
-      setCompletedSlipUrl(finalSlipDataUrl);
+      // 1. Generate Unique Verification ID ONCE
+      const uniqueId = verificationId || generateVerificationId(currentConfig.prefix);
+      const fNum = formNumber || generateFormNumber(currentConfig.prefix);
+      setVerificationId(uniqueId);
+      setFormNumber(fNum);
+
+      // 2. Render completed slip with the unique Verification ID stamped
+      let finalSlipDataUrl = completedSlipUrl;
+      try {
+        finalSlipDataUrl = await generateCompletedSlip({
+          type,
+          data: formData,
+          signatureDataUrl: formData.signature,
+          verificationId: uniqueId
+        });
+        setCompletedSlipUrl(finalSlipDataUrl);
+      } catch (e) {
+        console.warn('Error rendering final slip stamp:', e);
+      }
+
+      // 3. Prepare complete Request Object (per requirement 4, 5, 42)
+      const cleanAmt = (formData.amount || '').replace(/\D/g, '');
+      const amtNumeric = cleanAmt ? parseInt(cleanAmt, 10) : undefined;
+      const amtWords = formData.amountWords || (amtNumeric ? numberToIndianWords(String(amtNumeric)) : '');
+      const reqSource: RequestSource = source || (
+        type === 'withdrawal' ? 'find_service_withdrawal' :
+        type === 'deposit' ? 'find_service_deposit' : 'direct_submission'
+      );
+
+      const requestPayload: Partial<BankServiceRequest> = {
+        id: uniqueId,
+        requestId: fNum,
+        uniqueVerificationId: uniqueId,
+        serviceType: type,
+        source: reqSource,
+        status: 'PENDING',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        date: formData.date || getTodayFormatted(),
+        amountNumeric: amtNumeric,
+        amountInWords: amtWords,
+        accountHolderName: formData.name || formData.senderName || profile.name || 'Citizen Applicant',
+        accountNumber: formData.accountNumber || formData.senderAccount || '',
+        bankName: formData.bankName || 'State Bank of India',
+        branch: formData.branch || 'Main Branch',
+        transactionId: uniqueId,
+        tokenNumber: `T-${Math.floor(100 + Math.random() * 900)}`,
+        purpose: currentConfig.title,
+        signature: formData.signature,
+        uploadedDocument: ocrMetadata?.uploadedDocument,
+        OCRData: ocrMetadata?.OCRData,
+        ocrDetectedFields: ocrMetadata?.ocrDetectedFields || {},
+        userConfirmedData: { ...formData },
+        finalFormData: { ...formData },
+        allFormFields: { ...formData },
+        completedFields: Object.keys(formData).filter(k => Boolean(formData[k])),
+        userInputs: { ...formData },
+        generatedSlipData: finalSlipDataUrl,
+      };
+
+      // 4. Save to REST API Backend (which also synchronizes to local store)
+      await submitBankServiceRequest(requestPayload);
+
+      // 5. Transition to Success Animation Screen
+      setViewMode('success');
     } catch (e) {
-      console.warn('Error rendering final slip stamp:', e);
+      console.error('Error submitting bank service request:', e);
+    } finally {
+      setIsSubmitting(false);
     }
-
-    // 3. Save to Bank Admin Store immediately
-    const record = {
-      id: uniqueId,
-      formNumber: fNum,
-      type,
-      title: currentConfig.title,
-      customerName: formData.name || formData.senderName || 'Account Holder',
-      accountNumber: formData.accountNumber || formData.senderAccount || '',
-      amount: formData.amount,
-      amountWords: formData.amountWords,
-      date: formData.date || getTodayFormatted(),
-      signatureDataUrl: formData.signature,
-      completedSlipImageUrl: finalSlipDataUrl,
-      details: { ...formData },
-      status: 'READY_FOR_BANK' as const,
-      submittedAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    };
-
-    addBankRecord(record);
-
-    // 4. Transition to Success Animation Screen
-    setViewMode('success');
   };
 
   // Render active step input
@@ -982,9 +1023,20 @@ export function BankFormModal({ type, onClose, initialData }: BankFormModalProps
           <button
             type="button"
             onClick={handleFinalSubmit}
-            className="flex-[2] py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white font-black rounded-full text-sm transition-all shadow-lg shadow-emerald-600/30 flex items-center justify-center gap-2 active:scale-95"
+            disabled={isSubmitting}
+            className="flex-[2] py-3.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white font-black rounded-full text-sm transition-all shadow-lg shadow-emerald-600/30 flex items-center justify-center gap-2 active:scale-95 cursor-pointer disabled:cursor-not-allowed"
           >
-            <Check size={18} strokeWidth={3} /> DONE — DETAILS ARE CORRECT
+            {isSubmitting ? (
+              <>
+                <Loader2 size={18} className="animate-spin" />
+                <span>SUBMITTING TO BANK...</span>
+              </>
+            ) : (
+              <>
+                <Check size={18} strokeWidth={3} />
+                <span>DONE — DETAILS ARE CORRECT</span>
+              </>
+            )}
           </button>
         </div>
       </div>

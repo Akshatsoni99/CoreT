@@ -125,6 +125,35 @@ export function deleteBankRecord(id: string): boolean {
 }
 
 /**
+ * Clear all bank records from local storage
+ */
+export function clearAllBankRecords(): boolean {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify([]));
+    window.dispatchEvent(new CustomEvent('coreserve_records_updated', { detail: [] }));
+    return true;
+  } catch (e) {
+    console.error('Error clearing bank records:', e);
+    return false;
+  }
+}
+
+/**
+ * Restore sample/default bank records into local storage
+ */
+export function restoreDefaultBankRecords(records?: BankFormRecord[]): boolean {
+  const listToSave = records && records.length > 0 ? records : [];
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(listToSave));
+    window.dispatchEvent(new CustomEvent('coreserve_records_updated', { detail: listToSave }));
+    return true;
+  } catch (e) {
+    console.error('Error restoring bank records in local store:', e);
+    return false;
+  }
+}
+
+/**
  * Subscribe to bank records changes (returns cleanup function)
  */
 export function subscribeToBankRecords(callback: (records: BankFormRecord[]) => void): () => void {

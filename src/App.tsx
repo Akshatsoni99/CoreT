@@ -15,7 +15,35 @@ import { AuthView } from './views/AuthView';
 import { AdminView } from './views/AdminView';
 
 export default function App() {
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      const auth = localStorage.getItem('coret_auth_session');
+      if (auth === 'true') return true;
+      const profile = localStorage.getItem('coreserve_user_profile');
+      if (profile) {
+        try {
+          const parsed = JSON.parse(profile);
+          if (parsed.name || parsed.email) return true;
+        } catch {}
+      }
+    }
+    return false;
+  });
+
+  const handleLogin = () => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('coret_auth_session', 'true');
+    }
+    setIsAuthenticated(true);
+  };
+
+  const handleLogout = () => {
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('coret_auth_session');
+    }
+    setIsAuthenticated(false);
+  };
+
   const [activeTab, setActiveTab] = useState(() => {
     if (typeof window !== 'undefined' && window.location.hash.toLowerCase().includes('admin')) {
       return 'admin';
@@ -66,7 +94,7 @@ export default function App() {
     return (
       <div className="min-h-screen bg-gray-100 flex justify-center overflow-hidden font-sans">
         <div className="w-full max-w-md bg-white h-screen flex flex-col relative shadow-2xl sm:rounded-[2.5rem] sm:h-[90vh] sm:my-auto sm:border-8 border-gray-900 overflow-hidden">
-          <AuthView onLogin={() => setIsAuthenticated(true)} />
+          <AuthView onLogin={handleLogin} />
         </div>
       </div>
     );
@@ -76,9 +104,9 @@ export default function App() {
     <Layout activeTab={activeTab} onTabChange={handleNavigate}>
       {activeTab === 'home' && <HomeView onNavigate={handleNavigate} />}
       {activeTab === 'scanner' && <ScannerView onComplete={() => handleNavigate('home')} />}
-      {activeTab === 'services' && <ServicesView />}
+      {activeTab === 'services' && <ServicesView onBack={() => handleNavigate('home')} />}
       {activeTab === 'scam-shield' && <ScamShieldView />}
-      {activeTab === 'profile' && <ProfileView onLogout={() => setIsAuthenticated(false)} />}
+      {activeTab === 'profile' && <ProfileView onLogout={handleLogout} />}
       {activeTab === 'ask-ai' && <AskAIView onNavigate={handleNavigate} initialQuery={aiInitialQuery} />}
     </Layout>
   );

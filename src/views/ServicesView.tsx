@@ -151,7 +151,11 @@ type ViewState =
   | { type: 'category'; categoryId: string }
   | { type: 'detail'; categoryId: string; serviceName: string };
 
-export function ServicesView() {
+export interface ServicesViewProps {
+  onBack?: () => void;
+}
+
+export function ServicesView({ onBack }: ServicesViewProps) {
   const [view, setView] = useState<ViewState>({ type: 'main' });
   const [activeBankModal, setActiveBankModal] = useState<BankServiceType | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -170,8 +174,13 @@ export function ServicesView() {
     <>
       <header className="flex flex-col px-4 pt-12 pb-4 border-b border-gray-100 bg-white sticky top-0 z-10">
         <div className="flex items-center mb-4">
-          <button className="p-2 -ml-2 text-gray-900 invisible">
-            <ChevronLeft size={24} />
+          <button 
+            onClick={onBack} 
+            className="p-1.5 -ml-2 text-gray-700 hover:text-gray-900 hover:bg-gray-100 rounded-full flex items-center gap-1 transition-colors font-bold text-xs"
+            title="Back to Home"
+          >
+            <ChevronLeft size={22} />
+            <span className="text-xs">Back</span>
           </button>
           <h1 className="text-xl font-bold text-gray-900 ml-2">Services</h1>
         </div>
@@ -405,6 +414,7 @@ export function ServicesView() {
       {activeBankModal && (
         <BankFormModal 
           type={activeBankModal} 
+          source={activeBankModal === 'withdrawal' ? 'find_service_withdrawal' : 'find_service_deposit'}
           onClose={() => setActiveBankModal(null)} 
         />
       )}

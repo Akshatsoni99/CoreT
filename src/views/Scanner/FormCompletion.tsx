@@ -8,6 +8,8 @@ import { generateCompletedSlip } from '../../utils/slipRenderer';
 import { SignaturePad } from '../../components/banking/SignaturePad';
 import { AccountNumberBoxes } from '../../components/banking/AccountNumberBoxes';
 import { SuccessAnimation } from '../../components/banking/SuccessAnimation';
+import { submitBankServiceRequest } from '../../services/apiService';
+import { calculateAmountInWords } from '../../utils/currencyUtils';
 
 interface FormCompletionProps {
   result: OCRAnalysisResult;
@@ -128,23 +130,41 @@ export function FormCompletion({ result, onComplete, onBack }: FormCompletionPro
       console.warn('Stamp render error:', e);
     }
 
-    // Save record to Bank Admin Store
-    addBankRecord({
+    // Prepare complete Request Object
+    const cleanAmt = (allFields.amount || '').replace(/\D/g, '');
+    const amtNumeric = cleanAmt ? parseInt(cleanAmt, 10) : undefined;
+    const amtWords = allFields.amountWords || (amtNumeric ? calculateAmountInWords(amtNumeric) : '');
+    const detectedType = (result.detectedSlipType === 'deposit' ? 'deposit' : 'withdrawal') as any;
+
+    await submitBankServiceRequest({
       id: uniqueId,
-      formNumber: fNum,
-      type: (result.detectedSlipType || 'ocr_form') as any,
-      title: result.documentType,
-      customerName: allFields.name || allFields.senderName || profile.name || 'Citizen Applicant',
-      accountNumber: allFields.accountNumber || allFields.senderAccount || '',
-      amount: allFields.amount,
-      amountWords: allFields.amountWords,
-      date: allFields.date || new Date().toLocaleDateString('en-GB'),
-      signatureDataUrl,
-      completedSlipImageUrl: finalSlipUrl,
-      details: { ...allFields },
-      status: 'READY_FOR_BANK',
-      submittedAt: new Date().toISOString(),
+      requestId: fNum,
+      uniqueVerificationId: uniqueId,
+      serviceType: detectedType,
+      source: 'ocr_scan',
+      status: 'PENDING',
+      createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
+      date: allFields.date || new Date().toLocaleDateString('en-GB'),
+      amountNumeric: amtNumeric,
+      amountInWords: amtWords,
+      accountHolderName: allFields.name || allFields.senderName || profile.name || 'Citizen Applicant',
+      accountNumber: allFields.accountNumber || allFields.senderAccount || '',
+      bankName: 'State Bank of India',
+      branch: allFields.branch || 'Main Branch',
+      transactionId: uniqueId,
+      tokenNumber: `T-${Math.floor(100 + Math.random() * 900)}`,
+      purpose: result.documentType,
+      signature: signatureDataUrl,
+      uploadedDocument: result.capturedImage,
+      OCRData: result,
+      ocrDetectedFields: { ...allFields },
+      userConfirmedData: { ...allFields },
+      finalFormData: { ...allFields },
+      allFormFields: { ...allFields },
+      completedFields: Object.keys(allFields).filter(k => Boolean(allFields[k])),
+      userInputs: { ...allFields },
+      generatedSlipData: finalSlipUrl,
       notes: `Extracted via on-device OCR (${result.confidence}% confidence)`
     });
 

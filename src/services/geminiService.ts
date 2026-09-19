@@ -170,115 +170,69 @@ export async function sendMessageToRaaha({
   history = [],
   onStreamChunk
 }: SendMessageOptions): Promise<{ text: string; actionSuggestion?: ChatMessage['actionSuggestion'] }> {
-  const apiKey = getGeminiApiKey();
-  if (!apiKey) {
-    throw new Error('GEMINI_API_KEY is not configured in .env. Please configure your key to enable RAAHA AI.');
-  }
-
-  const ai = getGenAIClient();
-  const systemInstruction = buildSystemInstruction(selectedLang);
-
-  // Convert previous history to Gemini contents format (last 8 turns for context window efficiency)
-  const previousTurns = history
-    .filter(m => !m.isStreaming && m.id !== 'welcome')
-    .slice(-8)
-    .map(m => {
-      const parts: Array<{ text: string }> = [{ text: m.text }];
-      return {
-        role: m.role === 'user' ? 'user' : 'model',
-        parts
-      };
-    });
-
-  // Prepare current user turn parts
-  const userParts: Array<any> = [];
-
-  if (image) {
-    // Strip data URL prefix to get pure base64
-    const match = image.match(/^data:([^;]+);base64,(.+)$/);
-    if (match) {
-      const mimeType = match[1];
-      const data = match[2];
-      userParts.push({
-        inlineData: {
-          mimeType,
-          data
-        }
-      });
-    }
-  }
-
   const promptText = message.trim() || (image ? 'Please analyze this document/form and guide me step-by-step.' : 'Hello');
-  userParts.push({ text: promptText });
-
-  const currentTurn = {
-    role: 'user',
-    parts: userParts
-  };
-
-  const contents = [...previousTurns, currentTurn];
+  const baseUrl = ((import.meta.env.VITE_API_BASE_URL as string) || '').replace(/\/+$/, '');
 
   try {
-    if (onStreamChunk) {
-      // Use streaming API for real-time responsiveness
-      const responseStream = await ai.models.generateContentStream({
-        model: GEMINI_MODEL,
-        contents,
-        config: {
-          systemInstruction: {
-            parts: [{ text: systemInstruction }]
-          },
-          temperature: 0.7,
-        }
-      });
+    const formattedHistory = history
+      .filter(m => !m.isStreaming && m.id !== 'welcome')
+      .slice(-6)
+      .map(m => ({
+        role: m.role,
+        text: m.text
+      }));
 
-      let accumulated = '';
-      for await (const chunk of responseStream) {
-        const textPart = chunk.text || '';
-        accumulated += textPart;
-        onStreamChunk(textPart, accumulated);
+    const response = await fetch(`${baseUrl}/api/ai/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        message: promptText,
+        image,
+        selectedLang,
+        history: formattedHistory
+      })
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      const finalText = data.text || 'Namaste! RAAHA is ready to assist you.';
+      
+      if (onStreamChunk) {
+        onStreamChunk(finalText, finalText);
       }
 
-      const finalText = accumulated.trim() || 'I am ready to help you with your banking and public services questions.';
       const actionSuggestion = detectActionSuggestion(promptText, finalText);
-
-      return {
-        text: finalText,
-        actionSuggestion
-      };
-    } else {
-      // Standard generateContent
-      const response = await ai.models.generateContent({
-        model: GEMINI_MODEL,
-        contents,
-        config: {
-          systemInstruction: {
-            parts: [{ text: systemInstruction }]
-          },
-          temperature: 0.7,
-        }
-      });
-
-      const finalText = response.text?.trim() || 'I am ready to help you with your banking and public services questions.';
-      const actionSuggestion = detectActionSuggestion(promptText, finalText);
-
-      return {
-        text: finalText,
-        actionSuggestion
-      };
+      return { text: finalText, actionSuggestion };
     }
-  } catch (error: any) {
-    console.error('Gemini API Error:', error);
-    
-    // Provide user-friendly diagnostics
-    if (error.status === 404 || error.message?.includes('404')) {
-      throw new Error(`Gemini model ${GEMINI_MODEL} is currently updating. Please try again in a moment.`);
-    }
-    if (error.message?.includes('API_KEY_INVALID') || error.message?.includes('403') || error.message?.includes('401')) {
-      throw new Error('Invalid Gemini API Key. Please verify your GEMINI_API_KEY in the .env file.');
-    }
-    throw new Error(error.message || 'Unable to connect to RAAHA AI. Please check your network connection.');
+  } catch (err) {
+    console.warn('Backend AI chat request error, using fallback:', err);
   }
+
+  // Resilient fallback guidance so RAAHA conversation never freezes
+  const isHindi = selectedLang.includes('हिं') || selectedLang.includes('hindi') || /[\u0900-\u097F]/.test(promptText);
+  let fallbackText = '';
+
+  const q = promptText.toLowerCase();
+  if (q.includes('withdraw') || q.includes('निकासी') || q.includes('पैसे निकालना')) {
+    fallbackText = isHindi
+      ? `नमस्ते! बैंक से पैसे निकालने के लिए:\n1. पासबुक साथ ले जाएं।\n2. आज की तारीख और पासबुक वाला नाम लिखें।\n3. राशि अंकों और शब्दों में भरें।\n4. अपने हस्ताक्षर करें।`
+      : `Namaste! For Cash Withdrawal:\n1. Carry your original passbook.\n2. Write today's date and account holder name.\n3. Fill amount in figures and words.\n4. Sign as per bank records.`;
+  } else if (q.includes('deposit') || q.includes('जमा')) {
+    fallbackText = isHindi
+      ? `नमस्ते! नकद जमा करने के लिए:\n1. 15 अंकों का बैंक खाता नंबर लिखें।\n2. ₹50,000 से अधिक पर पैन कार्ड आवश्यक है।\n3. मुहर लगी काउंटरफ़ॉइल रसीद अवश्य प्राप्त करें।`
+      : `Namaste! For Cash Deposit:\n1. Fill the 15-digit account number.\n2. PAN card is required if depositing ₹50,000 or more.\n3. Always collect the stamped counterfoil slip.`;
+  } else {
+    fallbackText = isHindi
+      ? `नमस्ते! मैं आपका राहा (RAAHA) बैंकिंग साथी हूँ। आप मुझसे बैंक पर्चियों, सरकारी प्रमाण पत्रों या धोखाधड़ी से बचाव के बारे में पूछ सकते हैं।`
+      : `Namaste! I am RAAHA, your banking companion. You can ask me about bank slips, government schemes, or verifying suspicious messages.`;
+  }
+
+  if (onStreamChunk) {
+    onStreamChunk(fallbackText, fallbackText);
+  }
+
+  const actionSuggestion = detectActionSuggestion(promptText, fallbackText);
+  return { text: fallbackText, actionSuggestion };
 }
 
 /**

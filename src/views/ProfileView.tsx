@@ -3,6 +3,7 @@ import { Settings, FileText, Shield, Bell, HelpCircle, LogOut, ChevronRight, Che
 import AppLogo from '../assets/new-logo.png';
 import { isGeminiConfigured, getGeminiApiKey } from '../services/geminiService';
 import { getUserProfile, setUserProfile, UserProfile } from '../services/userProfileStore';
+import { getApiBaseUrl, setApiBaseUrl } from '../services/apiService';
 
 type ProfileViewState = 'main' | 'edit' | 'vault' | 'privacy' | 'settings' | 'support';
 
@@ -18,6 +19,15 @@ export function ProfileView({ onLogout }: { onLogout?: () => void }) {
     window.addEventListener('coreserve_profile_updated', handleUpdate);
     return () => window.removeEventListener('coreserve_profile_updated', handleUpdate);
   }, []);
+
+  const [adminServerUrl, setAdminServerUrl] = useState(() => getApiBaseUrl());
+  const [adminUrlSaved, setAdminUrlSaved] = useState(false);
+
+  const handleSaveAdminUrl = () => {
+    setApiBaseUrl(adminServerUrl);
+    setAdminUrlSaved(true);
+    setTimeout(() => setAdminUrlSaved(false), 2000);
+  };
 
   const handleSaveProfile = () => {
     setUserProfile(profileData);
@@ -258,6 +268,50 @@ export function ProfileView({ onLogout }: { onLogout?: () => void }) {
 
             <div className="text-[11px] text-gray-500 leading-relaxed">
               Your Gemini API Key is loaded automatically from your environment. RAAHA AI uses it for real-time banking guidance, form filling help, speech recognition, and document analysis.
+            </div>
+          </div>
+
+          {/* Admin Backend Live Sync (CoreT-Admin) */}
+          <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-purple-50 text-purple-700 flex items-center justify-center font-bold">
+                  🏦
+                </div>
+                <div>
+                  <h3 className="font-bold text-gray-900 text-sm">CoreT-Admin Live Sync</h3>
+                  <p className="text-[11px] text-gray-500">Connect to Admin Dashboard on Phone</p>
+                </div>
+              </div>
+              <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full ${
+                adminServerUrl ? 'bg-emerald-100 text-emerald-800' : 'bg-blue-100 text-blue-800'
+              }`}>
+                {adminServerUrl ? 'Custom Backend' : 'Same Domain'}
+              </span>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-gray-700 block">
+                Admin Backend URL (Vercel Live Link)
+              </label>
+              <div className="flex gap-2">
+                <input
+                  type="url"
+                  placeholder="https://coret-admin.vercel.app"
+                  value={adminServerUrl}
+                  onChange={(e) => setAdminServerUrl(e.target.value)}
+                  className="flex-1 bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-xs font-mono text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <button
+                  onClick={handleSaveAdminUrl}
+                  className="px-3 py-2 bg-[#004B87] hover:bg-blue-800 text-white font-bold rounded-xl text-xs transition-colors shrink-0 shadow-sm"
+                >
+                  {adminUrlSaved ? 'Saved! ✓' : 'Save'}
+                </button>
+              </div>
+              <p className="text-[10px] text-gray-400">
+                💡 Enter your live <code>CoreT-admin</code> Vercel URL to instantly forward all withdrawals, deposits, and OCR requests from your phone.
+              </p>
             </div>
           </div>
 

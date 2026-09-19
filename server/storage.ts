@@ -24,15 +24,20 @@ class JsonFileRequestRepository implements IRequestRepository {
   private isLoaded: boolean = false;
 
   constructor() {
-    const dataDir = path.resolve(process.cwd(), 'server', 'data');
-    if (!fs.existsSync(dataDir)) {
-      try {
-        fs.mkdirSync(dataDir, { recursive: true });
-      } catch (e) {
-        console.warn('Failed to create server/data directory:', e);
+    const isServerless = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
+    const targetDir = isServerless 
+      ? path.join('/tmp', 'coret_data') 
+      : path.resolve(process.cwd(), 'server', 'data');
+
+    try {
+      if (!fs.existsSync(targetDir)) {
+        fs.mkdirSync(targetDir, { recursive: true });
       }
+    } catch (e) {
+      console.warn('Directory creation notice:', e);
     }
-    this.filePath = path.join(dataDir, 'requests.json');
+
+    this.filePath = path.join(targetDir, 'requests.json');
     this.loadFromDisk();
   }
 
@@ -42,6 +47,23 @@ class JsonFileRequestRepository implements IRequestRepository {
         const raw = fs.readFileSync(this.filePath, 'utf-8');
         if (raw.trim()) {
           this.memoryCache = JSON.parse(raw);
+          this.isLoaded = true;
+          return;
+        }
+      }
+
+      // Check bundled fallback seed if target file is empty or missing (e.g. on Vercel)
+      const bundledPath = path.resolve(process.cwd(), 'server', 'data', 'requests.json');
+      if (fs.existsSync(bundledPath)) {
+        const rawBundled = fs.readFileSync(bundledPath, 'utf-8');
+        if (rawBundled.trim()) {
+          this.memoryCache = JSON.parse(rawBundled);
+          this.isLoaded = true;
+          // Try to copy to writable location
+          try {
+            fs.writeFileSync(this.filePath, rawBundled, 'utf-8');
+          } catch {}
+          return;
         }
       }
     } catch (e) {
@@ -55,7 +77,14 @@ class JsonFileRequestRepository implements IRequestRepository {
     try {
       fs.writeFileSync(this.filePath, JSON.stringify(this.memoryCache, null, 2), 'utf-8');
     } catch (e) {
-      console.error('Error saving requests to disk:', e);
+      // Fallback to /tmp if process.cwd failed (e.g. read-only file system)
+      try {
+        const tmpPath = path.join('/tmp', 'requests.json');
+        fs.writeFileSync(tmpPath, JSON.stringify(this.memoryCache, null, 2), 'utf-8');
+        this.filePath = tmpPath;
+      } catch (err) {
+        console.warn('Memory cache preserved, disk write skipped:', err);
+      }
     }
   }
 

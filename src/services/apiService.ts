@@ -14,9 +14,40 @@ import {
   BankFormRecord 
 } from './bankAdminStore';
 
-function getApiBaseUrl(): string {
+export function getApiBaseUrl(): string {
+  if (typeof window !== 'undefined') {
+    // Check URL parameter e.g. https://coret.vercel.app?api=https://coret-admin.vercel.app
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const urlParam = params.get('api');
+      if (urlParam && urlParam.trim()) {
+        const clean = urlParam.trim().replace(/\/+$/, '');
+        localStorage.setItem('coret_api_base_url', clean);
+        return clean;
+      }
+    } catch {}
+
+    // Check localStorage
+    try {
+      const stored = localStorage.getItem('coret_api_base_url');
+      if (stored && stored.trim()) {
+        return stored.trim().replace(/\/+$/, '');
+      }
+    } catch {}
+  }
+
   const envUrl = (import.meta.env.VITE_API_BASE_URL as string) || '';
   return envUrl.replace(/\/+$/, '');
+}
+
+export function setApiBaseUrl(newUrl: string): void {
+  if (typeof window !== 'undefined') {
+    if (!newUrl || !newUrl.trim()) {
+      localStorage.removeItem('coret_api_base_url');
+    } else {
+      localStorage.setItem('coret_api_base_url', newUrl.trim().replace(/\/+$/, ''));
+    }
+  }
 }
 
 /**

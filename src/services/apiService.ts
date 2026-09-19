@@ -16,7 +16,7 @@ import {
 
 export function getApiBaseUrl(): string {
   if (typeof window !== 'undefined') {
-    // Check URL parameter e.g. https://coret.vercel.app?api=https://coret-admin.vercel.app
+    // 1. Check URL parameter e.g. https://corethackindia.vercel.app?api=https://core-t-admin.vercel.app
     try {
       const params = new URLSearchParams(window.location.search);
       const urlParam = params.get('api');
@@ -27,17 +27,31 @@ export function getApiBaseUrl(): string {
       }
     } catch {}
 
-    // Check localStorage
+    // 2. Check localStorage
     try {
       const stored = localStorage.getItem('coret_api_base_url');
       if (stored && stored.trim()) {
         return stored.trim().replace(/\/+$/, '');
       }
     } catch {}
+
+    // 3. Production browser environment check
+    const host = window.location.hostname;
+    const isLocal = host === 'localhost' || host === '127.0.0.1';
+    if (!isLocal) {
+      // If running directly on the admin domain itself, use local relative API
+      if (host.includes('core-t-admin') || host.includes('coret-admin')) {
+        return '';
+      }
+      // If running on citizen domain (e.g. corethackindia.vercel.app), default directly to live Admin backend!
+      return 'https://core-t-admin.vercel.app';
+    }
   }
 
   const envUrl = (import.meta.env.VITE_API_BASE_URL as string) || '';
-  return envUrl.replace(/\/+$/, '');
+  if (envUrl && envUrl.trim()) return envUrl.replace(/\/+$/, '');
+
+  return 'https://core-t-admin.vercel.app';
 }
 
 export function setApiBaseUrl(newUrl: string): void {
